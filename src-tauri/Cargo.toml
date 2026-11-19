@@ -1,5 +1,5 @@
 [package]
-name = "csv-workbench"
+name = "csvscope"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,12 +11,12 @@ custom-protocol = ["tauri/custom-protocol"]
 tauri-build = { version = "=2.7.6", features = [] }
 
 [dependencies]
-csv-workbench-core = { path = "../crates/core" }
+csvscope-core = { path = "../crates/core" }
 tauri = { version = "=2.12.6", features = [] }
 tauri-plugin-dialog = "2"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 
 [[bin]]
-name = "csv-workbench"
+name = "csvscope"
 path = "src/main.rs"

@@ -1,4 +1,4 @@
-# CSV Workbench
+# CSVScope · 数览
 
 面向 Windows 10/11 x64 的本地大型 CSV 查看、联动筛选、排序与导出工具。Tauri 2 / Rust / React 18 / Glide Data Grid / 原生 DuckDB；正常读取、查询与导出不访问远程服务。
 
@@ -6,7 +6,7 @@
 
 ## 运行
 
-便携发行包解压后，运行其中的 `csv-workbench.exe`，并保留同目录的 MSVC 运行库 DLL。程序包含前端资源与 DuckDB，无需运行 Vite、Node、Rust 或数据库服务。需要系统已安装 Microsoft Edge WebView2 Runtime。不要只复制一个 EXE 到未安装 C++ 运行库的机器。
+便携发行包解压后，运行其中的 `csvscope.exe`，并保留同目录的 MSVC 运行库 DLL。程序包含前端资源与 DuckDB，无需运行 Vite、Node、Rust 或数据库服务。需要系统已安装 Microsoft Edge WebView2 Runtime。不要只复制一个 EXE 到未安装 C++ 运行库的机器。
 
 GitHub Release 提供便携 ZIP、常规 NSIS 安装器和离线 NSIS 安装器；普通提交的自动构建包可从对应 Actions 运行的 Artifacts 下载。本地打包结果位于 `artifacts/`，不提交到源码仓库。常规安装器在缺少 WebView2 时下载微软引导程序。离线安装器包含经过签名验证的 WebView2 x64 安装程序，可用于断网部署。已有运行时的机器正常使用本工具不需要联网。发行文件的 SHA-256 见随包提供的 `RELEASE.sha256`，干净 Windows 安装验收待测。
 
@@ -81,17 +81,17 @@ npm run desktop:build -- --features custom-protocol --locked --config src-tauri/
 
 工作流为 `.github/workflows/windows.yml`，使用 GitHub 托管的 Windows x64 环境。每次推送分支、提交 Pull Request 或在 Actions 页面手动运行时，自动安装锁定依赖、检查版本、执行前端与 Rust 测试，并生成以下文件：
 
-- `CSV-Workbench-<版本>-windows-x64.zip`：便携包，含 MSVC CRT、文档和许可。
-- `CSV-Workbench-<版本>-windows-x64-setup.exe`：常规安装器。
-- `CSV-Workbench-<版本>-windows-x64-offline-setup.exe`：含 WebView2 的离线安装器。
+- `CSVScope-<版本>-windows-x64.zip`：便携包，含 MSVC CRT、文档和许可。
+- `CSVScope-<版本>-windows-x64-setup.exe`：常规安装器。
+- `CSVScope-<版本>-windows-x64-offline-setup.exe`：含 WebView2 的离线安装器。
 - `RELEASE.sha256` 和 `THIRD-PARTY-NOTICES.txt`：校验清单与第三方许可。
 
-构建结果在对应 Actions 运行的 `csv-workbench-windows-x64` Artifact 中保留 14 天。首次原生 DuckDB 编译较慢；后续运行会尝试复用 Rust 与 npm 缓存。自动构建不运行本机桌面交互和大文件性能验收，这些仍按下方验证步骤单独执行。
+构建结果在对应 Actions 运行的 `csvscope-windows-x64` Artifact 中保留 14 天。首次原生 DuckDB 编译较慢；后续运行会尝试复用 Rust 与 npm 缓存。自动构建不运行本机桌面交互和大文件性能验收，这些仍按下方验证步骤单独执行。
 
 第一次上传时，先在 GitHub 创建一个空仓库（不自动添加 README、License 或 `.gitignore`），然后在本项目目录执行：
 
 ```powershell
-git remote add origin <你的GitHub仓库地址>
+git remote add origin https://github.com/tongjixyz/CSVScope.git
 git push -u origin main
 ```
 
@@ -99,7 +99,7 @@ git push -u origin main
 
 ```powershell
 npm run check:version
-git tag -a v0.1.0 -m "CSV Workbench 0.1.0"
+git tag -a v0.1.0 -m "CSVScope 0.1.0"
 git push origin v0.1.0
 ```
 

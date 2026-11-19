@@ -9,9 +9,9 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Release 构建失败。' }
     }
     $version = (Get-Content -LiteralPath 'package.json' -Raw | ConvertFrom-Json).version
-    $destination = Join-Path $packageWorkspace "artifacts\CSV-Workbench-$version-windows-x64"
+    $destination = Join-Path $packageWorkspace "artifacts\CSVScope-$version-windows-x64"
     [System.IO.Directory]::CreateDirectory($destination) | Out-Null
-    Copy-Item -LiteralPath 'target\release\csv-workbench.exe' -Destination $destination
+    Copy-Item -LiteralPath 'target\release\csvscope.exe' -Destination $destination
     foreach ($dll in Get-ChildItem -LiteralPath 'runtime' -File -Filter '*.dll') {
         Copy-Item -LiteralPath $dll.FullName -Destination $destination
     }
@@ -29,9 +29,9 @@ try {
     }
     & (Join-Path $PSScriptRoot 'notices.ps1') -Output (Join-Path $destination 'THIRD-PARTY-NOTICES.txt')
     $quickStart = @"
-CSV Workbench $version Preview — Windows x64
+CSVScope $version Preview — Windows x64
 
-1. 解压整个文件夹，运行 csv-workbench.exe。请保留同目录 DLL。
+1. 解压整个文件夹，运行 csvscope.exe。请保留同目录 DLL。
 2. 需要 Microsoft Edge WebView2 Runtime。若系统缺少该运行时，请先通过微软提供的安装程序安装。
 3. Ctrl+O 打开 CSV；首先显示有限预览，随后完整准备。只有“完整数据已就绪”才代表全部数据可筛选。
 4. 列标题右侧菜单提供联动筛选；点击确定才应用。Ctrl+Z 撤销，Ctrl+Y 重做。
@@ -43,7 +43,7 @@ CSV Workbench $version Preview — Windows x64
 "@
     $quickStart | Set-Content -LiteralPath (Join-Path $destination '打开说明.txt') -Encoding utf8
     $manifest = [ordered]@{
-        product = 'CSV Workbench'; version = $version; platform = 'windows-x64'
+        product = 'CSVScope'; version = $version; platform = 'windows-x64'
         createdAt = [DateTimeOffset]::Now.ToString('o')
         cargoLockSha256 = (Get-FileHash -LiteralPath 'Cargo.lock' -Algorithm SHA256).Hash
         npmLockSha256 = (Get-FileHash -LiteralPath 'package-lock.json' -Algorithm SHA256).Hash

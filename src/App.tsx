@@ -339,7 +339,7 @@ export default function App() {
 
   return <div className="app-shell">
     <header className="app-header">
-      <div className="brand"><div className="brand-mark"><FileSpreadsheet size={22} strokeWidth={1.8} /></div><div><strong>CSV Workbench</strong><span>大型数据，轻松查看</span></div><span className="version">PREVIEW 0.1</span></div>
+      <div className="brand"><div className="brand-mark"><FileSpreadsheet size={22} strokeWidth={1.8} /></div><div><strong>CSVScope</strong><span>大型数据，轻松查看</span></div><span className="version">PREVIEW 0.1</span></div>
       <div className="header-actions"><span className="local-badge"><ShieldCheck size={14} />本地处理</span><button className="icon-button" aria-label="缓存管理" title="缓存管理" onClick={() => { if (native) void api.usage().then(setCache).catch(fail); }}><HardDrive size={18} /></button><button className="icon-button" aria-label="使用帮助" onClick={() => setNotice("Ctrl+O 打开文件 · 点击表头排序 · 表头菜单筛选 · Ctrl+Z 撤销 · 双击单元格查看完整内容")}><HelpCircle size={18} /></button></div>
     </header>
     <nav className="tab-bar">

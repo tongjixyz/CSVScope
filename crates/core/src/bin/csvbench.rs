@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, ensure};
-use csv_workbench_core::*;
+use csvscope_core::*;
 use std::{collections::BTreeMap, fs::{self, File}, io::{BufWriter, Write}, path::PathBuf, sync::Arc, thread, time::{Duration, Instant}};
 
 fn wait(engine: &Arc<Engine>, tab: &str) -> Result<SessionSnapshot> {

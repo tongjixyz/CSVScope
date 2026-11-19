@@ -1,3 +1,4 @@
+pub mod diagnostics;
 pub mod filter;
 pub mod history;
 pub mod model;

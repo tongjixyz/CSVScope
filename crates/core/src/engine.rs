@@ -1,4 +1,5 @@
 use crate::{
+    diagnostics::{self, Operation},
     filter::{column_name, compile_filters, compile_order},
     history::History,
     model::*,
@@ -155,17 +156,23 @@ impl Engine {
             _instance_lock: Some(instance_lock),
         }))
     }
-    fn connection(&self) -> Result<Connection> { Ok(self.connection.lock().unwrap().try_clone()?) }
+    fn connection(&self) -> Result<Connection> {
+        diagnostics::measure("engine.connection", serde_json::json!({}), true,
+            || Ok(self.connection.lock().unwrap().try_clone()?))
+    }
     fn session(&self, tab: &str) -> Result<Arc<Session>> {
         self.sessions.lock().unwrap().get(tab).cloned().context("文件标签已关闭")
     }
     fn permit<'a>(&'a self, task: &Task) -> Result<std::sync::MutexGuard<'a, ()>> {
+        let mut operation = Operation::start("task.wait_for_slot",
+            serde_json::json!({ "tabId": task.owner, "priority": task.priority }), true);
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let ticket = NEXT.fetch_add(1, Ordering::Relaxed);
         self.waiting.lock().unwrap().insert(ticket, (task.owner.clone(), task.priority));
         loop {
             if let Err(error) = task.check() {
                 self.waiting.lock().unwrap().remove(&ticket);
+                operation.finish(Some(error.to_string()));
                 return Err(error);
             }
             let active = self.active.lock().unwrap().clone();
@@ -175,6 +182,7 @@ impl Engine {
             if first == Some(ticket) {
                 if let Ok(guard) = self.heavy.try_lock() {
                     waiting.remove(&ticket);
+                    operation.finish(None);
                     return Ok(guard);
                 }
             }
@@ -199,6 +207,34 @@ impl Engine {
     pub fn snapshots(&self) -> Vec<SessionSnapshot> {
         self.check_sources();
         self.sessions.lock().unwrap().values().map(|s| s.data.lock().unwrap().snapshot.clone()).collect()
+    }
+    /// Watchdog snapshots must not wait for a lock held by the work being diagnosed.
+    /// They intentionally omit CSV values, previews and filter text.
+    pub fn diagnostic_status(&self) -> serde_json::Value {
+        let sessions = match self.sessions.try_lock() {
+            Ok(sessions) => serde_json::json!(sessions.iter().map(|(id, session)| {
+                match session.data.try_lock() {
+                    Ok(data) => {
+                        let snapshot = &data.snapshot;
+                        serde_json::json!({
+                            "tabId": id, "status": snapshot.status, "phase": snapshot.phase,
+                            "bytesRead": snapshot.bytes_read, "totalBytes": snapshot.total_bytes,
+                            "rowsRead": snapshot.rows_read, "columns": snapshot.columns.len(),
+                            "revision": snapshot.revision, "cacheHit": snapshot.cache_hit,
+                            "error": snapshot.error, "query": snapshot.query,
+                        })
+                    }
+                    Err(_) => serde_json::json!({ "tabId": id, "lockBusy": "session.data" }),
+                }
+            }).collect::<Vec<_>>()),
+            Err(_) => serde_json::json!({ "lockBusy": "sessions" }),
+        };
+        let waiting = match self.waiting.try_lock() {
+            Ok(waiting) => serde_json::json!(waiting.iter().map(|(ticket, (owner, priority))|
+                serde_json::json!({ "ticket": ticket, "tabId": owner, "priority": priority })).collect::<Vec<_>>()),
+            Err(_) => serde_json::json!({ "lockBusy": "waiting" }),
+        };
+        serde_json::json!({ "sessions": sessions, "waiting": waiting, "heavySlotBusy": self.heavy.try_lock().is_err() })
     }
     pub fn snapshot(&self, tab: &str) -> Result<SessionSnapshot> { Ok(self.session(tab)?.data.lock().unwrap().snapshot.clone()) }
     pub fn open(self: &Arc<Self>, path: PathBuf, spec: ParseSpec) -> Result<String> {
@@ -230,7 +266,11 @@ impl Engine {
     fn spawn_prepare(self: &Arc<Self>, tab: String, session: Arc<Session>, task: Arc<Task>, path: PathBuf, spec: ParseSpec) {
         let engine = self.clone();
         thread::spawn(move || {
-            if let Err(error) = engine.prepare(&session, &task, &path, spec) {
+            let mut operation = Operation::start("task.prepare",
+                serde_json::json!({ "tabId": tab, "path": path }), false);
+            let result = engine.prepare(&session, &task, &path, spec);
+            operation.finish(result.as_ref().err().map(|error| format!("{error:#}")));
+            if let Err(error) = result {
                 let mut data = session.data.lock().unwrap();
                 if data.snapshot.status != "closed" {
                     data.snapshot.status = if task.cancel.load(Ordering::Relaxed) { "cancelled" } else { "failed" }.into();
@@ -239,7 +279,10 @@ impl Engine {
                 }
             } else if engine.session(&tab).is_ok() {
                 let columns = session.data.lock().unwrap().snapshot.columns.len().min(12);
-                let _ = engine.start_query(&tab, (0..columns).collect());
+                if let Err(error) = engine.start_query(&tab, (0..columns).collect()) {
+                    diagnostics::record("error", "initial_query_failed",
+                        serde_json::json!({ "tabId": tab, "error": format!("{error:#}") }));
+                }
             }
         });
     }
@@ -426,6 +469,10 @@ impl Engine {
         data.snapshot.columns = manifest.columns.clone();
         data.snapshot.preview.clear();
         data.snapshot.cache_hit = cache_hit;
+        diagnostics::record("info", "dataset_ready", serde_json::json!({
+            "tabId": data.snapshot.id, "rows": manifest.rows,
+            "columns": manifest.columns.len(), "cacheHit": cache_hit,
+        }));
         data.dataset = Some(Dataset { alias: attachment.alias.clone(), manifest, _attachment: attachment });
         Ok(())
     }
@@ -548,14 +595,25 @@ impl Engine {
                 projection: projection.clone(), error: None,
             });
         }
-        if direct { return Ok(query_id); }
+        if direct {
+            diagnostics::record("info", "query_ready", serde_json::json!({
+                "tabId": tab, "queryId": query_id, "rows": dataset.manifest.rows, "direct": true,
+            }));
+            return Ok(query_id);
+        }
         let engine = self.clone();
         thread::spawn(move || {
+            let mut operation = Operation::start("task.query", serde_json::json!({
+                "queryId": query.id, "tabId": task.owner, "revision": revision,
+                "columns": projection, "filterColumns": view.filters.len(), "sortKeys": view.sort.len(),
+                "projectionOnly": source.is_some(),
+            }), false);
             let result = if let Some(source) = source {
                 engine.build_projection(&session, &dataset, &query, &source)
             } else {
                 engine.build_query(&session, &dataset, &query)
             };
+            operation.finish(result.as_ref().err().map(|error| format!("{error:#}")));
             let mut data = session.data.lock().unwrap();
             if let Some(snapshot) = data.snapshot.query.as_mut().filter(|q| q.id == query.id) {
                 match result {
@@ -736,6 +794,11 @@ impl Engine {
         self.candidates.lock().unwrap().insert(candidate_id.clone(), candidate.clone());
         let engine = self.clone();
         thread::spawn(move || {
+            let mut operation = Operation::start("task.candidates", serde_json::json!({
+                "candidateId": candidate.snapshot.lock().unwrap().id,
+                "tabId": candidate.task.owner, "column": column, "revision": revision,
+                "searchBytes": search.len(), "selectedValues": selected_values.len(),
+            }), false);
             let result = (|| -> Result<u64> {
                 let _permit = engine.permit(&candidate.task)?;
                 let conn = engine.connection()?;
@@ -782,6 +845,7 @@ impl Engine {
                 }
                 Ok(total)
             })();
+            operation.finish(result.as_ref().err().map(|error| format!("{error:#}")));
             let mut snapshot = candidate.snapshot.lock().unwrap();
             match result {
                 Ok(n) => { snapshot.status = "ready".into(); snapshot.count = n.to_string(); }
@@ -929,7 +993,12 @@ impl Engine {
         self.exports.lock().unwrap().insert(export_id.clone(), export.clone());
         let engine = self.clone();
         thread::spawn(move || {
+            let mut operation = Operation::start("task.export", serde_json::json!({
+                "tabId": export.task.owner, "exportId": export.snapshot.lock().unwrap().id,
+                "path": spec.path, "columns": spec.columns.len(), "rows": total,
+            }), false);
             let result = engine.write_export(&dataset, &query, &export, &spec, total);
+            operation.finish(result.as_ref().err().map(|error| format!("{error:#}")));
             let mut snapshot = export.snapshot.lock().unwrap();
             match result {
                 Ok(()) => snapshot.status = "completed".into(),

@@ -7,7 +7,7 @@ try {
     $outputPath = [System.IO.Path]::GetFullPath($(if ([System.IO.Path]::IsPathRooted($Output)) { $Output } else { Join-Path $workspace $Output }))
     [System.IO.Directory]::CreateDirectory((Split-Path -Parent $outputPath)) | Out-Null
     $text = [System.Text.StringBuilder]::new()
-    [void]$text.AppendLine('CSV Workbench — third-party notices')
+    [void]$text.AppendLine('CSVScope — third-party notices')
     [void]$text.AppendLine('Generated from the locked local source packages. This inventory also includes Rust build/test dependencies; inclusion does not imply a component is shipped.')
     [void]$text.AppendLine('Microsoft MSVC runtime DLLs are proprietary redistributable components supplied under Microsoft Visual Studio redistribution terms. Their exact versions and hashes are in runtime-manifest.json.')
     [void]$text.AppendLine('Microsoft Edge WebView2 is a separate system runtime and is not included in the portable package.')

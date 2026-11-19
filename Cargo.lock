@@ -821,10 +821,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "csv-workbench"
+name = "csvscope"
 version = "0.1.0"
 dependencies = [
- "csv-workbench-core",
+ "csvscope-core",
  "serde",
  "serde_json",
  "tauri",
@@ -833,7 +833,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "csv-workbench-core"
+name = "csvscope-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",

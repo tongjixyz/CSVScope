@@ -1,7 +1,7 @@
 param([switch]$Release)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'environment.ps1')
-$env:CSV_WORKBENCH_CACHE_DIR = Join-Path $workspace '.cache'
+$env:CSVSCOPE_CACHE_DIR = Join-Path $workspace '.cache'
 Push-Location $workspace
 try {
     & (Join-Path $PSScriptRoot 'runtime.ps1')

@@ -13,7 +13,7 @@ lto = "thin"
 codegen-units = 1
 strip = true
 
-[profile.dev.package.csv-workbench-core]
+[profile.dev.package.csvscope-core]
 opt-level = 2
 
 [profile.dev.package.duckdb]

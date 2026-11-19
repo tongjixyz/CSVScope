@@ -2,30 +2,30 @@ param([switch]$Release, [string[]]$Files = @(), [string]$BinaryPath = '', [strin
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
 $profile = if ($Release) { 'release' } else { 'debug' }
-$binary = if ($BinaryPath) { (Resolve-Path -LiteralPath $BinaryPath).Path } else { Join-Path $workspace "target\$profile\csv-workbench.exe" }
+$binary = if ($BinaryPath) { (Resolve-Path -LiteralPath $BinaryPath).Path } else { Join-Path $workspace "target\$profile\csvscope.exe" }
 if (-not (Test-Path -LiteralPath $binary)) { throw "请先运行 scripts/build.ps1。缺少 $binary" }
 $browserArguments = $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
-$cacheSetting = $env:CSV_WORKBENCH_CACHE_DIR
-$oldBenchFiles = $env:CSV_WORKBENCH_BENCH_FILES
-$oldBenchOutput = $env:CSV_WORKBENCH_BENCH_OUTPUT
-$oldTestStart = $env:CSV_WORKBENCH_TEST_START_MS
+$cacheSetting = $env:CSVSCOPE_CACHE_DIR
+$oldBenchFiles = $env:CSVSCOPE_BENCH_FILES
+$oldBenchOutput = $env:CSVSCOPE_BENCH_OUTPUT
+$oldTestStart = $env:CSVSCOPE_TEST_START_MS
 $app = $null
 Push-Location $workspace
 try {
     $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9223 --remote-debugging-address=127.0.0.1'
     $reportDirectory = Join-Path $workspace '.bench\desktop-smoke'
-    $env:CSV_WORKBENCH_CACHE_DIR = Join-Path $workspace '.bench\desktop-smoke-cache'
+    $env:CSVSCOPE_CACHE_DIR = Join-Path $workspace '.bench\desktop-smoke-cache'
     $arguments = @('scripts/ui-smoke.mjs', '--desktop')
     if ($Files.Count -gt 0) {
         $reportDirectory = Join-Path $workspace ('.bench\desktop-benchmark\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
-        $env:CSV_WORKBENCH_CACHE_DIR = Join-Path $workspace '.bench\desktop-benchmark-cache'
-        $env:CSV_WORKBENCH_BENCH_FILES = ConvertTo-Json -InputObject @($Files | ForEach-Object { (Resolve-Path -LiteralPath $_).Path }) -Compress
-        $env:CSV_WORKBENCH_BENCH_OUTPUT = $reportDirectory
+        $env:CSVSCOPE_CACHE_DIR = Join-Path $workspace '.bench\desktop-benchmark-cache'
+        $env:CSVSCOPE_BENCH_FILES = ConvertTo-Json -InputObject @($Files | ForEach-Object { (Resolve-Path -LiteralPath $_).Path }) -Compress
+        $env:CSVSCOPE_BENCH_OUTPUT = $reportDirectory
         $arguments = @('scripts/desktop-benchmark.mjs')
     }
-    if ($CachePath) { $env:CSV_WORKBENCH_CACHE_DIR = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($CachePath) }
+    if ($CachePath) { $env:CSVSCOPE_CACHE_DIR = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($CachePath) }
     [System.IO.Directory]::CreateDirectory($reportDirectory) | Out-Null
-    $env:CSV_WORKBENCH_TEST_START_MS = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds().ToString()
+    $env:CSVSCOPE_TEST_START_MS = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds().ToString()
     $app = Start-Process -FilePath $binary -WorkingDirectory (Split-Path -Parent $binary) -PassThru -WindowStyle Hidden
     $ready = $false
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
@@ -93,9 +93,9 @@ try {
         if (-not $app.WaitForExit(3000)) { $app.Kill() }
     }
     $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = $browserArguments
-    $env:CSV_WORKBENCH_CACHE_DIR = $cacheSetting
-    $env:CSV_WORKBENCH_BENCH_FILES = $oldBenchFiles
-    $env:CSV_WORKBENCH_BENCH_OUTPUT = $oldBenchOutput
-    $env:CSV_WORKBENCH_TEST_START_MS = $oldTestStart
+    $env:CSVSCOPE_CACHE_DIR = $cacheSetting
+    $env:CSVSCOPE_BENCH_FILES = $oldBenchFiles
+    $env:CSVSCOPE_BENCH_OUTPUT = $oldBenchOutput
+    $env:CSVSCOPE_TEST_START_MS = $oldTestStart
     Pop-Location
 }

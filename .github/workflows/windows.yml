@@ -69,7 +69,7 @@ jobs:
         run: ./scripts/prepare-build.ps1
 
       - name: Test Rust workspace
-        run: cargo test --workspace --features csv-workbench/custom-protocol --release --locked
+        run: cargo test --workspace --features csvscope/custom-protocol --release --locked
 
       - name: Build standard and offline installers
         env:
@@ -88,7 +88,7 @@ jobs:
               throw "Expected one NSIS installer, found $($installers.Count)."
             }
             $suffix = if ($offline) { '-offline-setup.exe' } else { '-setup.exe' }
-            $name = "CSV-Workbench-$env:PACKAGE_VERSION-windows-x64$suffix"
+            $name = "CSVScope-$env:PACKAGE_VERSION-windows-x64$suffix"
             Copy-Item -LiteralPath $installers[0].FullName -Destination (Join-Path artifacts $name)
           }
 
@@ -98,7 +98,7 @@ jobs:
         run: |
           ./scripts/package-portable.ps1 -SkipBuild
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $portableDirectory = "artifacts/CSV-Workbench-$env:PACKAGE_VERSION-windows-x64"
+          $portableDirectory = "artifacts/CSVScope-$env:PACKAGE_VERSION-windows-x64"
           Copy-Item -LiteralPath "$portableDirectory/THIRD-PARTY-NOTICES.txt" -Destination artifacts
           $files = Get-ChildItem -LiteralPath artifacts -File |
             Where-Object { $_.Extension -in '.exe', '.zip' -or $_.Name -eq 'THIRD-PARTY-NOTICES.txt' } |
@@ -112,7 +112,7 @@ jobs:
       - name: Upload Windows packages
         uses: actions/upload-artifact@v7
         with:
-          name: csv-workbench-windows-x64
+          name: csvscope-windows-x64
           path: |
             artifacts/*.zip
             artifacts/*.exe
@@ -134,7 +134,7 @@ jobs:
       - name: Download Windows packages
         uses: actions/download-artifact@v8
         with:
-          name: csv-workbench-windows-x64
+          name: csvscope-windows-x64
           path: artifacts
 
       - name: Verify and publish release assets
@@ -155,6 +155,6 @@ jobs:
               flags+=(--prerelease)
             fi
             gh release create "$RELEASE_TAG" "${assets[@]}" \
-              --verify-tag --title "CSV Workbench $RELEASE_TAG" \
+              --verify-tag --title "CSVScope $RELEASE_TAG" \
               --generate-notes "${flags[@]}"
           fi

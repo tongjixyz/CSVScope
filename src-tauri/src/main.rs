@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use csv_workbench_core::*;
+use csvscope_core::*;
 use std::{path::PathBuf, sync::Arc};
 use tauri::{Manager, State};
 
@@ -88,7 +88,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let path = std::env::var_os("CSV_WORKBENCH_CACHE_DIR").map(PathBuf::from)
+            let path = std::env::var_os("CSVSCOPE_CACHE_DIR").map(PathBuf::from)
                 .unwrap_or(app.path().app_cache_dir()?.join("v1"));
             app.manage(Engine::new(EngineConfig::new(path))?);
             Ok(())
@@ -99,7 +99,7 @@ fn main() {
             start_export, export_status, cancel_export, cache_usage, clear_cache
         ])
         .build(tauri::generate_context!())
-        .expect("无法启动 CSV Workbench")
+        .expect("无法启动 CSVScope")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
                 let engine = app.state::<AppState>();

@@ -1,4 +1,4 @@
-use csv_workbench_core::*;
+use csvscope_core::*;
 use duckdb::arrow::ipc::reader::FileReader;
 use std::{collections::BTreeMap, fs::{self, File}, io::Cursor, path::Path, sync::Arc, thread, time::{Duration, Instant}};
 

@@ -7,6 +7,6 @@ try {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     npm run build
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    cargo test --workspace --features csv-workbench/custom-protocol --locked
+    cargo test --workspace --features csvscope/custom-protocol --locked
     exit $LASTEXITCODE
 } finally { Pop-Location }

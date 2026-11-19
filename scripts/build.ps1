@@ -9,9 +9,9 @@ try {
     if ($Installer) {
         npm run desktop:build -- --features custom-protocol --locked
     } elseif ($Release) {
-        cargo build --workspace --features csv-workbench/custom-protocol --release --locked
+        cargo build --workspace --features csvscope/custom-protocol --release --locked
     } else {
-        cargo build --workspace --features csv-workbench/custom-protocol --locked
+        cargo build --workspace --features csvscope/custom-protocol --locked
     }
     exit $LASTEXITCODE
 } finally { Pop-Location }

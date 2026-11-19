@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const files = JSON.parse(process.env.CSV_WORKBENCH_BENCH_FILES ?? "[]").map(p => path.resolve(p));
+const files = JSON.parse(process.env.CSVSCOPE_BENCH_FILES ?? "[]").map(p => path.resolve(p));
 assert.ok(files.length > 0, "Pass -Files to scripts/desktop-smoke.ps1");
-const output = process.env.CSV_WORKBENCH_BENCH_OUTPUT ?? path.resolve(".bench/desktop-benchmark");
+const output = process.env.CSVSCOPE_BENCH_OUTPUT ?? path.resolve(".bench/desktop-benchmark");
 await fs.mkdir(output, { recursive: true });
 const browser = await chromium.connectOverCDP("http://127.0.0.1:9223");
 const page = browser.contexts()[0].pages()[0];
@@ -47,8 +47,8 @@ function waitForGridValue(column, text) {
 
 try {
   await page.getByText("让大文件，回到轻松浏览").waitFor();
-  result.observedStartupSeconds = process.env.CSV_WORKBENCH_TEST_START_MS
-    ? (Date.now() - Number(process.env.CSV_WORKBENCH_TEST_START_MS)) / 1000 : null;
+  result.observedStartupSeconds = process.env.CSVSCOPE_TEST_START_MS
+    ? (Date.now() - Number(process.env.CSVSCOPE_TEST_START_MS)) / 1000 : null;
   const opening = performance.now();
   const tabs = [];
   for (const file of files) tabs.push(await invoke("open_file", { path: file, spec: null }));

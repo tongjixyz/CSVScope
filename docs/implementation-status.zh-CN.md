@@ -1,4 +1,4 @@
-# CSV Workbench 0.1.0 Preview：实现与验收状态
+# CSVScope 0.1.0 Preview：实现与验收状态
 
 更新日期为 2026-11-20。架构基线见 `architecture.zh-CN.md`，实际数据见 `benchmarks.zh-CN.md`。
 
