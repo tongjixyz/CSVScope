@@ -1,0 +1,49 @@
+{
+  "status": "measured",
+  "exitCode": 0,
+  "file": "D:\\code\\csv\\.bench\\regular-10g.csv",
+  "actualBytes": 10737418355,
+  "mode": "exercise",
+  "cachePath": "D:\\code\\csv\\.bench\\regular-10g-cache",
+  "osCacheState": "uncontrolled",
+  "wallSeconds": 166.0847846,
+  "sampledTreePeakWorkingSetBytes": 2208784384,
+  "sampledTreePeakPrivateBytes": 2253266944,
+  "mainProcessPeakWorkingSetBytes": 2200903680,
+  "maxProcessCount": 2,
+  "samples": 396,
+  "sampledDiskPeak": {
+    "duckdbTemporary": 7073529856,
+    "datasets": 1218808041,
+    "imports": 0,
+    "cacheTotal": 22046508129,
+    "resultsAndCandidates": 13850158176,
+    "interval": "1s plus process sampling time; per-category peaks may occur at different times"
+  },
+  "sampleInterval": "200ms plus CIM/process inspection time",
+  "cpu": {
+    "Name": "Intel(R) Core(TM) i5-14600KF",
+    "NumberOfCores": 14,
+    "NumberOfLogicalProcessors": 20
+  },
+  "os": {
+    "Caption": "Microsoft Windows 11 专业版",
+    "Version": "10.0.26300",
+    "TotalVisibleMemorySize": 33382004
+  },
+  "disks": [
+    {
+      "Model": "KIOXIA-EXCERIA G2 SSD",
+      "MediaType": "Fixed hard disk media",
+      "Size": 1000202273280
+    },
+    {
+      "Model": "GV-1TB-2280",
+      "MediaType": "Fixed hard disk media",
+      "Size": 1024203640320
+    }
+  ],
+  "scope": "Native benchmark CLI process tree; no WebView is started by this CLI.",
+  "build": "release",
+  "binarySha256": "C3A605B56715E53C959AD15C498C1C97FD8C24E41F0E0DFB955079E74CF40D09"
+}

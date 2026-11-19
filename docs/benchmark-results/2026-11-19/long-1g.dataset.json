@@ -1,0 +1,1 @@
+{"status": "generated", "path": "D:\\code\\csv\\.bench\\long-1g.csv", "actualBytes": 1073760731, "rows": 45391, "columns": 12, "payloadCharacters": 16384, "features": ["UTF-8", "Chinese", "embedded newlines", "quoted commas and quotes", "unique long identifiers"], "generationSeconds": 5.355703399982303}

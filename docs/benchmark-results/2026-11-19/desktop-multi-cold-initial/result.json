@@ -1,0 +1,63 @@
+{
+  "status": "failed",
+  "files": [
+    "D:\\code\\csv\\.bench\\multi-1.csv",
+    "D:\\code\\csv\\.bench\\multi-2.csv",
+    "D:\\code\\csv\\.bench\\multi-3.csv",
+    "D:\\code\\csv\\.bench\\multi-4.csv",
+    "D:\\code\\csv\\.bench\\multi-5.csv"
+  ],
+  "osCacheState": "uncontrolled",
+  "cases": [
+    {
+      "file": "D:\\code\\csv\\.bench\\multi-1.csv",
+      "bytes": "2147483704",
+      "rows": "13019787",
+      "columns": 12,
+      "cacheHit": false,
+      "readyObservedSecondsFromOpening": 276.6370563
+    },
+    {
+      "file": "D:\\code\\csv\\.bench\\multi-2.csv",
+      "bytes": "2147483704",
+      "rows": "13019787",
+      "columns": 12,
+      "cacheHit": false,
+      "readyObservedSecondsFromOpening": 276.8455368
+    },
+    {
+      "file": "D:\\code\\csv\\.bench\\multi-3.csv",
+      "bytes": "2147483704",
+      "rows": "13019787",
+      "columns": 12,
+      "cacheHit": false,
+      "readyObservedSecondsFromOpening": 105.4395432
+    },
+    {
+      "file": "D:\\code\\csv\\.bench\\multi-4.csv",
+      "bytes": "2147483704",
+      "rows": "13019787",
+      "columns": 12,
+      "cacheHit": false,
+      "readyObservedSecondsFromOpening": 276.8461076
+    },
+    {
+      "file": "D:\\code\\csv\\.bench\\multi-5.csv",
+      "bytes": "2147483704",
+      "rows": "13019787",
+      "columns": 12,
+      "cacheHit": false,
+      "readyObservedSecondsFromOpening": 275.95319010000003
+    }
+  ],
+  "notes": [
+    "UI preview is observed through the grid accessibility value and two animation frames.",
+    "Backend readiness is polled every 200ms; query completion numbers exclude human input time.",
+    "Process-tree resource sampling is in process.json; Playwright's Node process is excluded."
+  ],
+  "observedStartupSeconds": 0.924,
+  "firstRenderedDataSeconds": 0.9546526000000001,
+  "firstTabSwitchSeconds": 0.27691539999999804,
+  "error": "TimeoutError: page.waitForFunction: Timeout 30000ms exceeded.",
+  "errors": []
+}

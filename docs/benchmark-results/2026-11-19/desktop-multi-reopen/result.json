@@ -1,0 +1,75 @@
+{
+  "status": "passed",
+  "files": [
+    "D:\\code\\csv\\.bench\\multi-1.csv",
+    "D:\\code\\csv\\.bench\\multi-2.csv",
+    "D:\\code\\csv\\.bench\\multi-3.csv",
+    "D:\\code\\csv\\.bench\\multi-4.csv",
+    "D:\\code\\csv\\.bench\\multi-5.csv"
+  ],
+  "osCacheState": "uncontrolled",
+  "cases": [
+    {
+      "file": "D:\\code\\csv\\.bench\\multi-1.csv",
+      "bytes": "2147483704",
+      "rows": "13019787",
+      "columns": 12,
+      "cacheHit": true,
+      "readyObservedSecondsFromOpening": 1.0554975999999998
+    },
+    {
+      "file": "D:\\code\\csv\\.bench\\multi-2.csv",
+      "bytes": "2147483704",
+      "rows": "13019787",
+      "columns": 12,
+      "cacheHit": true,
+      "readyObservedSecondsFromOpening": 3.2638488
+    },
+    {
+      "file": "D:\\code\\csv\\.bench\\multi-3.csv",
+      "bytes": "2147483704",
+      "rows": "13019787",
+      "columns": 12,
+      "cacheHit": true,
+      "readyObservedSecondsFromOpening": 1.9475744
+    },
+    {
+      "file": "D:\\code\\csv\\.bench\\multi-4.csv",
+      "bytes": "2147483704",
+      "rows": "13019787",
+      "columns": 12,
+      "cacheHit": true,
+      "readyObservedSecondsFromOpening": 4.8376578
+    },
+    {
+      "file": "D:\\code\\csv\\.bench\\multi-5.csv",
+      "bytes": "2147483704",
+      "rows": "13019787",
+      "columns": 12,
+      "cacheHit": true,
+      "readyObservedSecondsFromOpening": 6.168776000000001
+    }
+  ],
+  "notes": [
+    "UI preview is observed through the grid accessibility value and two animation frames.",
+    "Backend readiness is polled every 200ms; query completion numbers exclude human input time.",
+    "Process-tree resource sampling is in process.json; Playwright's Node process is excluded."
+  ],
+  "observedStartupSeconds": 0.861,
+  "firstRenderedDataSeconds": 0.9204812,
+  "cacheAfterAllReady": {
+    "datasets": "1341566291",
+    "imports": "0",
+    "limit": "68719476736",
+    "path": "D:\\code\\csv\\.bench\\desktop-benchmark-cache",
+    "results": "0",
+    "sessions": "0",
+    "temporary": "0"
+  },
+  "firstTabSwitchSeconds": 0.04448559999999998,
+  "tabScrollRestoreSeconds": 0.23054719999999906,
+  "tabScrollRestore": "passed",
+  "independentViews": "passed",
+  "wallSeconds": 9.564002200000001,
+  "errors": []
+}

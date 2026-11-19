@@ -1,0 +1,13 @@
+{
+  "status": "measured",
+  "fixture": "fixtures/linked.csv",
+  "files": [
+    ".bench\\regular-1g.csv"
+  ],
+  "profile": "release",
+  "sampledFullApplicationPeakWorkingSetBytes": 2464538624,
+  "sampledFullApplicationPeakPrivateBytes": 2419523584,
+  "maxProcesses": 7,
+  "scope": "App and all observed descendants, including WebView2; excludes the Playwright test runner.",
+  "sampleInterval": "200ms plus CIM inspection time; sampled peak is a lower bound"
+}

@@ -1,0 +1,40 @@
+{
+  "status": "measured",
+  "exitCode": 0,
+  "file": "D:\\code\\csv\\.bench\\regular-1g.csv",
+  "actualBytes": 1073741973,
+  "mode": "exercise",
+  "cachePath": "D:\\code\\csv\\.bench\\release-cache",
+  "osCacheState": "uncontrolled",
+  "wallSeconds": 26.2200858,
+  "sampledTreePeakWorkingSetBytes": 2100379648,
+  "sampledTreePeakPrivateBytes": 2114592768,
+  "mainProcessPeakWorkingSetBytes": 2736128,
+  "maxProcessCount": 2,
+  "samples": 73,
+  "sampleInterval": "200ms plus CIM/process inspection time",
+  "cpu": {
+    "Name": "Intel(R) Core(TM) i5-14600KF",
+    "NumberOfCores": 14,
+    "NumberOfLogicalProcessors": 20
+  },
+  "os": {
+    "Caption": "Microsoft Windows 11 专业版",
+    "Version": "10.0.26300",
+    "TotalVisibleMemorySize": 33382004
+  },
+  "disks": [
+    {
+      "Model": "KIOXIA-EXCERIA G2 SSD",
+      "MediaType": "Fixed hard disk media",
+      "Size": 1000202273280
+    },
+    {
+      "Model": "GV-1TB-2280",
+      "MediaType": "Fixed hard disk media",
+      "Size": 1024203640320
+    }
+  ],
+  "scope": "Native benchmark CLI process tree; no WebView is started by this CLI.",
+  "build": "release"
+}

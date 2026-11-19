@@ -1,0 +1,45 @@
+{
+  "collectedAt": "2026-11-19T00:10:19.7443413+08:00",
+  "cpu": [
+    {
+      "Name": "Intel(R) Core(TM) i5-14600KF",
+      "NumberOfCores": 14,
+      "NumberOfLogicalProcessors": 20
+    }
+  ],
+  "os": {
+    "Caption": "Microsoft Windows 11 专业版",
+    "Version": "10.0.26300",
+    "TotalVisibleMemorySize": 33382004
+  },
+  "disks": [
+    {
+      "Model": "KIOXIA-EXCERIA G2 SSD",
+      "MediaType": "Fixed hard disk media",
+      "Size": 1000202273280
+    },
+    {
+      "Model": "GV-1TB-2280",
+      "MediaType": "Fixed hard disk media",
+      "Size": 1024203640320
+    }
+  ],
+  "volumes": [
+    {
+      "DeviceID": "C:",
+      "Size": 999025537024,
+      "FreeSpace": 492415111168,
+      "FileSystem": "NTFS"
+    },
+    {
+      "DeviceID": "D:",
+      "Size": 1024208138240,
+      "FreeSpace": 463427084288,
+      "FileSystem": "NTFS"
+    }
+  ],
+  "webview2": [
+    "157.0.4341.46",
+    "157.0.4341.60"
+  ]
+}

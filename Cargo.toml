@@ -1,0 +1,20 @@
+[workspace]
+members = ["crates/core", "src-tauri"]
+default-members = ["crates/core"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[profile.dev.package.csv-workbench-core]
+opt-level = 2
+
+[profile.dev.package.duckdb]
+opt-level = 2

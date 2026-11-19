@@ -1,0 +1,12 @@
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+page.waitForFunction: Timeout 30000ms exceeded.
+    at waitForGridValue (D:\code\csv\scripts\desktop-benchmark.mjs:43:15)
+    at D:\code\csv\scripts\desktop-benchmark.mjs:154:11 {
+  log: [],
+  name: 'TimeoutError'
+}
+
+Node.js v22.22.2

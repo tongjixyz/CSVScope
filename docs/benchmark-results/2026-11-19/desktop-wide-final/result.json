@@ -1,0 +1,75 @@
+{
+  "status": "passed",
+  "files": [
+    "D:\\code\\csv\\.bench\\wide-1g.csv"
+  ],
+  "osCacheState": "uncontrolled",
+  "cases": [
+    {
+      "file": "D:\\code\\csv\\.bench\\wide-1g.csv",
+      "bytes": "1073747033",
+      "rows": "161699",
+      "columns": 500,
+      "cacheHit": true,
+      "readyObservedSecondsFromOpening": 1.0504184
+    }
+  ],
+  "notes": [
+    "UI preview is observed through the grid accessibility value and two animation frames.",
+    "Backend readiness is polled every 200ms; query completion numbers exclude human input time.",
+    "Process-tree resource sampling is in process.json; Playwright's Node process is excluded."
+  ],
+  "observedStartupSeconds": 1.325,
+  "firstRenderedDataSeconds": 0.9132124,
+  "cacheAfterAllReady": {
+    "datasets": "145029180",
+    "imports": "0",
+    "limit": "68719476736",
+    "path": "D:\\code\\csv\\.bench\\wide-1g-cache",
+    "results": "0",
+    "sessions": "0",
+    "temporary": "0"
+  },
+  "firstFilter": {
+    "seconds": 0.4669964,
+    "rows": "1617"
+  },
+  "linkedCandidates": {
+    "seconds": 0.06939520000000016,
+    "count": "1",
+    "values": [
+      "5"
+    ]
+  },
+  "fullSort": {
+    "seconds": 0.2565938000000001,
+    "rows": "161699"
+  },
+  "farJump": {
+    "resultPosition": 145529,
+    "sourceRecord": "130952",
+    "seconds": 0.22813210000000025,
+    "verified": true
+  },
+  "cacheAtFullSort": {
+    "datasets": "145029180",
+    "imports": "0",
+    "limit": "68719476736",
+    "path": "D:\\code\\csv\\.bench\\wide-1g-cache",
+    "results": "34435615",
+    "sessions": "34435615",
+    "temporary": "0"
+  },
+  "horizontalProjection": {
+    "seconds": 0.8056181999999998,
+    "frozenColumn": 0,
+    "farColumn": 100,
+    "verified": true
+  },
+  "cancel": {
+    "seconds": 0.0475607,
+    "finalStatus": "cancelled"
+  },
+  "wallSeconds": 3.6025150999999997,
+  "errors": []
+}

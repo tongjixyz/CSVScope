@@ -1,0 +1,19 @@
+{
+  "status": "measured",
+  "exitCode": 1,
+  "fixture": null,
+  "files": [
+    ".bench\\wide-1g.csv"
+  ],
+  "profile": "release",
+  "binaryPath": "D:\\code\\csv\\artifacts\\CSV-Workbench-0.1.0-windows-x64\\csv-workbench.exe",
+  "binarySha256": "2A561B1FDA926BFAB2F9D117A34760FD2C59D11763726043049559BD58505F9A",
+  "webviewExecutables": {
+    "C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\157.0.4341.60\\msedgewebview2.exe": "157.0.4341.60"
+  },
+  "sampledFullApplicationPeakWorkingSetBytes": 545820672,
+  "sampledFullApplicationPeakPrivateBytes": 434151424,
+  "maxProcesses": 7,
+  "scope": "App and all observed descendants, including WebView2; excludes the Playwright test runner.",
+  "sampleInterval": "200ms plus CIM inspection time; sampled peak is a lower bound"
+}

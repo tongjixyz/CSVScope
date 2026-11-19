@@ -1,0 +1,30 @@
+# Dependencies, build outputs, and local toolchains
+node_modules/
+dist/
+target/
+.tools/
+.cache/
+.bench/
+test-data/
+artifacts/
+src-tauri/gen/
+*.tsbuildinfo
+
+# Generated redistributable runtime
+runtime/*.dll
+runtime/manifest.json
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+!.env.template
+.idea/
+.vs/
+
+# Temporary files
+*.part
+*.log
+.DS_Store
+Thumbs.db
+Desktop.ini

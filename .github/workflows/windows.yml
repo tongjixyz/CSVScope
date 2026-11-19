@@ -1,0 +1,160 @@
+name: Windows build and release
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  build:
+    name: Test and package Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 120
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Check version and release tag
+        id: version
+        run: npm run check:version
+
+      - name: Install locked Rust toolchain
+        run: rustup show
+
+      - name: Cache Rust dependencies and build outputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', '**/Cargo.toml', '.cargo/config.toml') }}
+          restore-keys: |
+            rust-${{ runner.os }}-
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Fetch locked Rust dependencies for build and license inventory
+        run: cargo fetch --locked
+
+      - name: Test frontend
+        run: npm test
+
+      - name: Prepare runtime and build frontend
+        run: ./scripts/prepare-build.ps1
+
+      - name: Test Rust workspace
+        run: cargo test --workspace --features csv-workbench/custom-protocol --release --locked
+
+      - name: Build standard and offline installers
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          foreach ($offline in @($false, $true)) {
+            $tauriArguments = @('--features', 'custom-protocol', '--locked')
+            if ($offline) {
+              $tauriArguments += @('--config', 'src-tauri/tauri.offline.conf.json')
+            }
+            npm run desktop:build -- @tauriArguments
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $installers = @(Get-ChildItem -LiteralPath target/release/bundle/nsis -File -Filter '*-setup.exe')
+            if ($installers.Count -ne 1) {
+              throw "Expected one NSIS installer, found $($installers.Count)."
+            }
+            $suffix = if ($offline) { '-offline-setup.exe' } else { '-setup.exe' }
+            $name = "CSV-Workbench-$env:PACKAGE_VERSION-windows-x64$suffix"
+            Copy-Item -LiteralPath $installers[0].FullName -Destination (Join-Path artifacts $name)
+          }
+
+      - name: Package portable ZIP and checksums
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          ./scripts/package-portable.ps1 -SkipBuild
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $portableDirectory = "artifacts/CSV-Workbench-$env:PACKAGE_VERSION-windows-x64"
+          Copy-Item -LiteralPath "$portableDirectory/THIRD-PARTY-NOTICES.txt" -Destination artifacts
+          $files = Get-ChildItem -LiteralPath artifacts -File |
+            Where-Object { $_.Extension -in '.exe', '.zip' -or $_.Name -eq 'THIRD-PARTY-NOTICES.txt' } |
+            Sort-Object Name
+          $checksums = foreach ($file in $files) {
+            $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($file.Name)"
+          }
+          $checksums | Set-Content -LiteralPath artifacts/RELEASE.sha256 -Encoding utf8NoBOM
+
+      - name: Upload Windows packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: csv-workbench-windows-x64
+          path: |
+            artifacts/*.zip
+            artifacts/*.exe
+            artifacts/RELEASE.sha256
+            artifacts/THIRD-PARTY-NOTICES.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows packages
+        uses: actions/download-artifact@v8
+        with:
+          name: csv-workbench-windows-x64
+          path: artifacts
+
+      - name: Verify and publish release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cd artifacts
+          sha256sum --check RELEASE.sha256
+          assets=(*.zip *.exe RELEASE.sha256 THIRD-PARTY-NOTICES.txt)
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            flags=()
+            if [[ "$RELEASE_TAG" == *-* ]]; then
+              flags+=(--prerelease)
+            fi
+            gh release create "$RELEASE_TAG" "${assets[@]}" \
+              --verify-tag --title "CSV Workbench $RELEASE_TAG" \
+              --generate-notes "${flags[@]}"
+          fi

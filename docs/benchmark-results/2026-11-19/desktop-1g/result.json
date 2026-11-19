@@ -1,0 +1,59 @@
+{
+  "status": "passed",
+  "files": [
+    "D:\\code\\csv\\.bench\\regular-1g.csv"
+  ],
+  "osCacheState": "uncontrolled",
+  "cases": [
+    {
+      "file": "D:\\code\\csv\\.bench\\regular-1g.csv",
+      "bytes": "1073741973",
+      "rows": "6509896",
+      "columns": 12,
+      "cacheHit": false,
+      "readyObservedSecondsFromOpening": 16.687669000000003
+    }
+  ],
+  "notes": [
+    "UI preview is observed through the grid accessibility value and two animation frames.",
+    "Backend readiness is polled every 200ms; query completion numbers exclude human input time.",
+    "Process-tree resource sampling is in process.json; Playwright's Node process is excluded."
+  ],
+  "observedStartupSeconds": 1.286,
+  "firstRenderedDataSeconds": 0.9256226999999999,
+  "firstFilter": {
+    "seconds": 0.6163667999999998,
+    "rows": "65099"
+  },
+  "linkedCandidates": {
+    "seconds": 0.06197260000000097,
+    "count": "1",
+    "values": [
+      "5"
+    ]
+  },
+  "fullSort": {
+    "seconds": 5.3751175,
+    "rows": "6509896"
+  },
+  "farJump": {
+    "resultPosition": 5858906,
+    "sourceRecord": "91000",
+    "verified": true
+  },
+  "cacheAtFullSort": {
+    "datasets": "122443371",
+    "imports": "0",
+    "limit": "68719476736",
+    "path": "D:\\code\\csv\\.bench\\desktop-benchmark-cache",
+    "results": "1385746468",
+    "sessions": "1385746468",
+    "temporary": "0"
+  },
+  "cancel": {
+    "seconds": 0.034792199999999864,
+    "finalStatus": "cancelled"
+  },
+  "wallSeconds": 23.438146099999997,
+  "errors": []
+}

@@ -1,0 +1,6 @@
+[http]
+proxy = ""
+multiplexing = false
+
+[build]
+jobs = 2
