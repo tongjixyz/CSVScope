@@ -83,9 +83,10 @@ jobs:
             }
             npm run desktop:build -- @tauriArguments
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            $installers = @(Get-ChildItem -LiteralPath target/release/bundle/nsis -File -Filter '*-setup.exe')
+            $installerPattern = "*_$($env:PACKAGE_VERSION)_x64-setup.exe"
+            $installers = @(Get-ChildItem -LiteralPath target/release/bundle/nsis -File -Filter $installerPattern)
             if ($installers.Count -ne 1) {
-              throw "Expected one NSIS installer, found $($installers.Count)."
+              throw "Expected one NSIS installer for $env:PACKAGE_VERSION, found $($installers.Count)."
             }
             $suffix = if ($offline) { '-offline-setup.exe' } else { '-setup.exe' }
             $name = "CSVScope-$env:PACKAGE_VERSION-windows-x64$suffix"
