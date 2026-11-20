@@ -7,7 +7,7 @@ try {
     npm run build
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     if ($Installer) {
-        npm run desktop:build -- --features custom-protocol --locked
+        npm run desktop:build -- --features custom-protocol -- --locked
     } elseif ($Release) {
         cargo build --workspace --features csvscope/custom-protocol --release --locked
     } else {

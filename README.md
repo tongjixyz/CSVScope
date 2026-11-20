@@ -72,7 +72,7 @@ npm ci
 离线 WebView2 安装包：
 
 ```powershell
-npm run desktop:build -- --features custom-protocol --locked --config src-tauri/tauri.offline.conf.json
+npm run desktop:build -- --features custom-protocol --config src-tauri/tauri.offline.conf.json -- --locked
 ```
 
 脚本优先识别本工作区 `.tools` 中的 Rust；不存在时使用系统工具链。`.tools`、构建产物、依赖和基准数据不属于发行包。DuckDB bundled 首次 C++ 编译耗时明显，后续构建复用相同依赖产物。

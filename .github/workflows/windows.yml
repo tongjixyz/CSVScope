@@ -78,10 +78,11 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
           foreach ($offline in @($false, $true)) {
-            $tauriArguments = @('--features', 'custom-protocol', '--locked')
+            $tauriArguments = @('--features', 'custom-protocol')
             if ($offline) {
               $tauriArguments += @('--config', 'src-tauri/tauri.offline.conf.json')
             }
+            $tauriArguments += @('--', '--locked')
             npm run desktop:build -- @tauriArguments
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             $installerPattern = "*_$($env:PACKAGE_VERSION)_x64-setup.exe"
