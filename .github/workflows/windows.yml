@@ -45,8 +45,9 @@ jobs:
       - name: Install locked Rust toolchain
         run: rustup show
 
-      - name: Cache Rust dependencies and build outputs
-        uses: actions/cache@v6
+      - name: Restore Rust dependencies and build outputs
+        id: rust-cache
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.cargo/registry
@@ -83,9 +84,10 @@ jobs:
             }
             npm run desktop:build -- @tauriArguments
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            $installers = @(Get-ChildItem -LiteralPath target/release/bundle/nsis -File -Filter '*-setup.exe')
+            $installerPattern = "*_$($env:PACKAGE_VERSION)_x64-setup.exe"
+            $installers = @(Get-ChildItem -LiteralPath target/release/bundle/nsis -File -Filter $installerPattern)
             if ($installers.Count -ne 1) {
-              throw "Expected one NSIS installer, found $($installers.Count)."
+              throw "Expected one NSIS installer for $env:PACKAGE_VERSION, found $($installers.Count)."
             }
             $suffix = if ($offline) { '-offline-setup.exe' } else { '-setup.exe' }
             $name = "CSVScope-$env:PACKAGE_VERSION-windows-x64$suffix"
@@ -121,6 +123,16 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+
+      - name: Save Rust dependencies and build outputs
+        if: ${{ !cancelled() && steps.rust-cache.outputs.cache-primary-key != '' && steps.rust-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ steps.rust-cache.outputs.cache-primary-key }}
 
   release:
     name: Publish GitHub Release

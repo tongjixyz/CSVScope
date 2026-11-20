@@ -23,7 +23,12 @@ pub fn unix_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64
 }
 
-enum Message { Event(Value), Flush(mpsc::Sender<()>) }
+enum Message {
+    Event(Value),
+    Flush(mpsc::Sender<()>),
+    #[cfg(test)]
+    Close(mpsc::Sender<()>),
+}
 
 struct ActiveOperation {
     name: &'static str,
@@ -128,6 +133,13 @@ impl Logger {
                         }
                     }
                     Message::Flush(done) => { let _ = writer.file.flush(); let _ = done.send(()); }
+                    #[cfg(test)]
+                    Message::Close(done) => {
+                        let _ = writer.file.flush();
+                        drop(writer);
+                        let _ = done.send(());
+                        return;
+                    }
                 }
             }
         })?;
@@ -289,7 +301,9 @@ mod tests {
         let _held = logger.active.lock().unwrap();
         let (done, receiver) = mpsc::channel();
         logger.sender.try_send(Message::Event(event_value("error", "test_error", json!({ "message": "错误\n第二行" })))).unwrap();
-        logger.sender.try_send(Message::Flush(done)).unwrap();
+        // A Windows exclusive file lease also blocks another handle's reads.
+        // Close the writer while the registry is still held, then inspect its output.
+        logger.sender.try_send(Message::Close(done)).unwrap();
         receiver.recv_timeout(Duration::from_secs(2)).unwrap();
         let value: Value = serde_json::from_str(fs::read_to_string(&logger.initial_file).unwrap().trim()).unwrap();
         assert_eq!(value["details"]["message"], "错误\n第二行");
