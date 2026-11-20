@@ -822,7 +822,7 @@ dependencies = [
 
 [[package]]
 name = "csvscope"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "csvscope-core",
  "serde",
@@ -834,7 +834,7 @@ dependencies = [
 
 [[package]]
 name = "csvscope-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "arrow",

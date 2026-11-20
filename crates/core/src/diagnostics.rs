@@ -45,6 +45,7 @@ struct LogWriter {
     stem: String,
     part: u32,
     file: File,
+    _lease: File,
     bytes: u64,
     limit: u64,
 }
@@ -52,32 +53,39 @@ struct LogWriter {
 impl LogWriter {
     fn new(directory: &Path, limit: u64) -> io::Result<(Self, PathBuf)> {
         fs::create_dir_all(directory)?;
-        let stem = format!("csv-workbench-{}-{}", unix_ms(), std::process::id());
+        let stem = format!("csvscope-{}-{}", unix_ms(), std::process::id());
         let path = directory.join(format!("{stem}-0.log"));
-        let file = Self::open(&path)?;
-        let writer = Self { directory: directory.into(), stem, part: 0, file, bytes: 0, limit };
+        let (file, lease) = Self::open(&path)?;
+        let writer = Self { directory: directory.into(), stem, part: 0, file, _lease: lease, bytes: 0, limit };
         writer.prune();
         Ok((writer, path))
     }
-    fn open(path: &Path) -> io::Result<File> {
+    fn open(path: &Path) -> io::Result<(File, File)> {
+        // Windows byte-range locks also prevent readers. Lock a sidecar so the
+        // actual log can be read/copied while the application is still hung.
+        let lease = OpenOptions::new().read(true).write(true).create(true).truncate(false)
+            .open(path.with_extension("lock"))?;
+        fs2::FileExt::try_lock_exclusive(&lease)?;
         let file = OpenOptions::new().read(true).write(true).create_new(true).open(path)?;
-        fs2::FileExt::try_lock_exclusive(&file)?;
-        Ok(file)
+        Ok((file, lease))
     }
     fn prune(&self) {
         let Ok(entries) = fs::read_dir(&self.directory) else { return };
         let mut files: Vec<_> = entries.filter_map(Result::ok).filter(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
-            name.starts_with("csv-workbench-") && name.ends_with(".log")
+            name.starts_with("csvscope-") && name.ends_with(".log")
                 && entry.file_type().is_ok_and(|kind| kind.is_file())
         }).collect();
         files.sort_by_key(|entry| entry.metadata().and_then(|m| m.modified()).ok());
         let surplus = files.len().saturating_sub(FILE_COUNT);
         for entry in files.into_iter().take(surplus) {
             // Another running instance's log must stay intact.
-            if let Ok(file) = OpenOptions::new().read(true).write(true).open(entry.path()) {
+            let lease_path = entry.path().with_extension("lock");
+            if let Ok(file) = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(&lease_path) {
                 if fs2::FileExt::try_lock_exclusive(&file).is_ok() {
                     let _ = fs::remove_file(entry.path());
+                    drop(file);
+                    let _ = fs::remove_file(lease_path);
                 }
             }
         }
@@ -87,7 +95,9 @@ impl LogWriter {
         bytes.push(b'\n');
         if self.bytes > 0 && self.bytes + bytes.len() as u64 > self.limit {
             self.part += 1;
-            self.file = Self::open(&self.directory.join(format!("{}-{}.log", self.stem, self.part)))?;
+            let (file, lease) = Self::open(&self.directory.join(format!("{}-{}.log", self.stem, self.part)))?;
+            self.file = file;
+            self._lease = lease;
             self.bytes = 0;
             self.prune();
         }
@@ -114,7 +124,7 @@ impl Logger {
                         if let Err(error) = writer.write(&value) {
                             // A full/unplugged log volume must never stall application work.
                             lost.fetch_add(1, Ordering::Relaxed);
-                            eprintln!("CSV Workbench diagnostic write failed: {error}");
+                            eprintln!("CSVScope diagnostic write failed: {error}");
                         }
                     }
                     Message::Flush(done) => { let _ = writer.file.flush(); let _ = done.send(()); }
@@ -259,7 +269,8 @@ mod tests {
         let (mut writer, _) = LogWriter::new(temp.path(), 200).unwrap();
         for index in 0..25 { writer.write(&event_value("info", "test", json!({ "index": index }))).unwrap(); }
         drop(writer);
-        let files: Vec<_> = fs::read_dir(temp.path()).unwrap().map(Result::unwrap).collect();
+        let files: Vec<_> = fs::read_dir(temp.path()).unwrap().map(Result::unwrap)
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "log")).collect();
         assert!(files.len() <= FILE_COUNT);
         let mut indices = vec![];
         for file in files {
@@ -272,16 +283,31 @@ mod tests {
     }
 
     #[test]
-    fn slow_operation_inspection_does_not_wait_on_registry() {
+    fn queued_errors_are_written_while_registry_is_locked() {
         let temp = tempfile::tempdir().unwrap();
         let logger = Logger::new(temp.path()).unwrap();
         let _held = logger.active.lock().unwrap();
-        assert!(logger.active.try_lock().is_err());
         let (done, receiver) = mpsc::channel();
         logger.sender.try_send(Message::Event(event_value("error", "test_error", json!({ "message": "错误\n第二行" })))).unwrap();
         logger.sender.try_send(Message::Flush(done)).unwrap();
         receiver.recv_timeout(Duration::from_secs(2)).unwrap();
         let value: Value = serde_json::from_str(fs::read_to_string(&logger.initial_file).unwrap().trim()).unwrap();
         assert_eq!(value["details"]["message"], "错误\n第二行");
+    }
+
+    #[test]
+    fn panic_hook_preserves_an_emergency_backtrace() {
+        let temp = tempfile::tempdir().unwrap();
+        init(temp.path()).unwrap();
+        install_panic_hook();
+        let caught = std::panic::catch_unwind(|| panic!("diagnostic-panic-probe"));
+        assert!(caught.is_err());
+        let panic_file = fs::read_dir(temp.path()).unwrap().map(Result::unwrap)
+            .find(|entry| entry.file_name().to_string_lossy().starts_with("panic-")).unwrap();
+        let value: Value = serde_json::from_slice(&fs::read(panic_file.path()).unwrap()).unwrap();
+        assert_eq!(value["event"], "rust_panic");
+        assert!(value["details"]["message"].as_str().unwrap().contains("diagnostic-panic-probe"));
+        assert!(!value["details"]["backtrace"].as_str().unwrap().is_empty());
+        flush();
     }
 }

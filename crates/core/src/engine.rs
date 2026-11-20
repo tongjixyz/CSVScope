@@ -1175,3 +1175,21 @@ fn publish_new_file(source: &Path, destination: &Path) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+
+    #[test]
+    fn watchdog_status_does_not_wait_for_busy_engine_locks() {
+        let temp = tempfile::tempdir().unwrap();
+        let engine = Engine::new(EngineConfig::new(temp.path())).unwrap();
+        let _sessions = engine.sessions.lock().unwrap();
+        let _waiting = engine.waiting.lock().unwrap();
+        let _heavy = engine.heavy.lock().unwrap();
+        let status = engine.diagnostic_status();
+        assert_eq!(status["sessions"]["lockBusy"], "sessions");
+        assert_eq!(status["waiting"]["lockBusy"], "waiting");
+        assert_eq!(status["heavySlotBusy"], true);
+    }
+}

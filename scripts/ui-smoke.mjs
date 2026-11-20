@@ -7,7 +7,7 @@ const desktop = process.argv.includes("--desktop");
 const output = path.resolve(".bench", desktop ? "desktop-smoke" : "browser-smoke");
 await fs.mkdir(output, { recursive: true });
 const browser = desktop
-  ? await chromium.connectOverCDP("http://127.0.0.1:9223")
+  ? await chromium.connectOverCDP(process.env.CSVSCOPE_TEST_CDP_URL ?? "http://127.0.0.1:9223")
   : await chromium.launch({ channel: "msedge", headless: true });
 const context = desktop ? browser.contexts()[0] : await browser.newContext({ viewport: { width: 1440, height: 920 } });
 const page = desktop ? context.pages()[0] : await context.newPage();

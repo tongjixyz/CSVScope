@@ -2,7 +2,7 @@
 
 面向 Windows 10/11 x64 的本地大型 CSV 查看、联动筛选、排序与导出工具。Tauri 2 / Rust / React 18 / Glide Data Grid / 原生 DuckDB；正常读取、查询与导出不访问远程服务。
 
-当前版本为 **0.1.0 Preview**。实际运行与测量记录以 `docs/implementation-status.zh-CN.md` 和 `docs/benchmarks.zh-CN.md` 为准。设计基线在 `docs/architecture.zh-CN.md`，其中性能目标不能当成实测值。
+当前版本为 **0.1.1 Preview**。实际运行与测量记录以 `docs/implementation-status.zh-CN.md` 和 `docs/benchmarks.zh-CN.md` 为准。设计基线在 `docs/architecture.zh-CN.md`，其中性能目标不能当成实测值。
 
 ## 运行
 
@@ -11,6 +11,10 @@
 GitHub Release 提供便携 ZIP、常规 NSIS 安装器和离线 NSIS 安装器；普通提交的自动构建包可从对应 Actions 运行的 Artifacts 下载。本地打包结果位于 `artifacts/`，不提交到源码仓库。常规安装器在缺少 WebView2 时下载微软引导程序。离线安装器包含经过签名验证的 WebView2 x64 安装程序，可用于断网部署。已有运行时的机器正常使用本工具不需要联网。发行文件的 SHA-256 见随包提供的 `RELEASE.sha256`，干净 Windows 安装验收待测。
 
 打开文件后先显示最多 200 条完整记录的预览，同时在后台准备完整磁盘缓存。准备期间可以输入条件，但预览不会冒充完整筛选结果。状态变为“完整数据已就绪”后，条件才在全部数据上执行。
+
+## 运行日志
+
+0.1.1 起自动记录运行日志，默认在程序旁的 `logs` 文件夹，右上角“打开运行日志”可直接定位。日志包括操作耗时、后台任务进度、无响应与恢复、前端错误及 Rust 异常。每个普通日志约 5 MiB，最多保留最近 10 个；程序目录不可写时会自动回退。日志与故障排查细节见 [运行日志说明](docs/diagnostics.zh-CN.md)，本版验证结果见 [0.1.1 维护记录](docs/releases/0.1.1.zh-CN.md)。
 
 ## 操作
 
@@ -88,6 +92,8 @@ npm run desktop:build -- --features custom-protocol --locked --config src-tauri/
 
 构建结果在对应 Actions 运行的 `csvscope-windows-x64` Artifact 中保留 14 天。首次原生 DuckDB 编译较慢；后续运行会尝试复用 Rust 与 npm 缓存。自动构建不运行本机桌面交互和大文件性能验收，这些仍按下方验证步骤单独执行。
 
+多对话同时开发时，各任务使用独立工作树和分支；完成一版后提交并推送对应分支，再核对远端提交编号。具体约定见 [Git 备份与并行开发](docs/git-workflow.zh-CN.md)。
+
 第一次上传时，先在 GitHub 创建一个空仓库（不自动添加 README、License 或 `.gitignore`），然后在本项目目录执行：
 
 ```powershell
@@ -95,12 +101,12 @@ git remote add origin https://github.com/tongjixyz/CSVScope.git
 git push -u origin main
 ```
 
-发布当前 `0.1.0` 版本：
+发布当前 `0.1.1` 版本：
 
 ```powershell
 npm run check:version
-git tag -a v0.1.0 -m "CSVScope 0.1.0"
-git push origin v0.1.0
+git tag -a v0.1.1 -m "CSVScope 0.1.1"
+git push origin v0.1.1
 ```
 
 推送 `v*` 标签后，工作流在测试与打包通过后自动创建 GitHub Release，并上传上述文件。标签必须等于 `v` 加项目版本；`package.json`、`package-lock.json`、`Cargo.toml` 的工作区版本和 `src-tauri/tauri.conf.json` 必须一致。后续版本先同步修改并提交这些文件，再推送新标签。含 `-` 的版本标签（例如 `v0.2.0-beta.1`）会标记为预发布。
@@ -114,7 +120,7 @@ git push origin v0.1.0
 .\scripts\desktop-smoke.ps1 -Release
 ```
 
-第二个脚本只对测试启动的应用启用本机 CDP 调试端口，操作真实 WebView2 表格，保存截图并统计应用与 WebView2 子进程。正常启动不启用该端口。
+第二个脚本只对测试启动的应用启用独立的本机 CDP 调试端口，操作真实 WebView2 表格，保存截图并统计应用与 WebView2 子进程。正常启动不启用该端口。`.\scripts\desktop-smoke.ps1 -Release -Diagnostics` 会在单独测试实例中模拟 12.5 秒前端卡顿，验证错误日志、独立卡顿监测与恢复记录。
 桌面自动化和基准采样脚本使用 PowerShell 7；本机验证版本为 7.6.9。
 
 基准工具：
