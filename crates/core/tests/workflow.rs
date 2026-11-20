@@ -83,7 +83,7 @@ fn linked_filters_history_export_and_cache_are_consistent() {
     assert_eq!(cells[0], ["1", "001", "a,\r\nb"]);
     let output = workspace.path().join("output.csv");
     let export = engine.export(&tab, &query.id, ExportSpec {
-        path: output.clone(), columns: vec![0, 1, 2, 3], delimiter: ",".into(), encoding: "utf-8".into(), bom: false, headers: true,
+        path: output.clone(), columns: vec![0, 1, 2, 3], delimiter: ",".into(), encoding: "utf-8".into(), bom: false, headers: true, all_rows: false,
     }).unwrap();
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
@@ -112,7 +112,7 @@ fn stale_queries_and_two_tabs_cannot_override_current_state() {
     let tab = engine.open(source.clone(), ParseSpec::default()).unwrap();
     let initial = wait(&engine, &tab);
     let old_query = initial.query.unwrap().id;
-    let view = ViewState { filters: BTreeMap::from([(0, selected(&["x"]))]), sort: vec![] };
+    let view = ViewState { filters: BTreeMap::from([(0, selected(&["x"]))]), sort: vec![], ..Default::default() };
     engine.commit(&tab, initial.revision, view).unwrap();
     assert!(engine.page(&tab, &old_query, 0, 10, vec![0]).is_err());
     let filtered = wait(&engine, &tab);
@@ -158,6 +158,7 @@ fn sorted_result_projection_and_far_jump_keep_identity_without_history_changes()
     let view = ViewState {
         filters: BTreeMap::from([(0, selected(&["1"]))]),
         sort: vec![SortKey { column: 0, descending: true, interpretation: "text".into() }],
+        ..Default::default()
     };
     engine.commit(&tab, initial.revision, view.clone()).unwrap();
     let before = wait(&engine, &tab);
@@ -255,6 +256,7 @@ fn numeric_and_datetime_interpretation_rejects_implicit_rewriting() {
             (1, ColumnFilter { selection: None, predicates: vec![Predicate::DateTimeRange { min: Some("2026-01-01".into()), max: None }] }),
         ]),
         sort: vec![],
+        ..Default::default()
     };
     engine.commit(&tab, initial.revision, view).unwrap();
     let result = wait(&engine, &tab);
@@ -336,6 +338,7 @@ fn long_value_references_survive_context_changes_and_searches_beyond_display_lab
             }),
         ]),
         sort: vec![],
+        ..Default::default()
     };
     engine.commit(&tab, initial.revision, view).unwrap();
     assert_eq!(wait(&engine, &tab).query.unwrap().exact_total.as_deref(), Some("1"));

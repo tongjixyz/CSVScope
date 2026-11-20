@@ -1,5 +1,6 @@
 use crate::{
     diagnostics::{self, Operation},
+    editing,
     filter::{column_name, compile_filters, compile_order},
     history::History,
     model::*,
@@ -92,6 +93,7 @@ struct SessionData {
     history: History,
     dataset: Option<Dataset>,
     query: Option<Arc<Query>>,
+    baseline: EditState,
 }
 struct Session {
     data: Mutex<SessionData>,
@@ -104,6 +106,22 @@ struct CandidateTask {
     searches: Vec<String>,
 }
 struct ExportTask { snapshot: Mutex<ExportSnapshot>, task: Arc<Task> }
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ColorMetadata {
+    version: u32,
+    csv_hash: String,
+    has_headers: bool,
+    delimiter: Option<String>,
+    colors: BTreeMap<u64, BTreeMap<usize, String>>,
+}
+
+fn color_path(path: &Path) -> PathBuf {
+    let mut name = path.as_os_str().to_os_string();
+    name.push(".csvscope.json");
+    PathBuf::from(name)
+}
 
 pub struct Engine {
     pub config: EngineConfig,
@@ -247,10 +265,10 @@ impl Engine {
             total_bytes: fs::metadata(&path)?.len().to_string(), path: path.clone(),
             status: "opening".into(), phase: "读取文件配置".into(), bytes_read: "0".into(), rows_read: "0".into(),
             columns: vec![], preview: vec![], parse_spec: spec.clone(), warnings: vec![], error: None,
-            revision: 0, view: ViewState::default(), can_undo: false, can_redo: false, query: None, cache_hit: false,
+            revision: 0, view: ViewState::default(), can_undo: false, can_redo: false, query: None, cache_hit: false, modified: false,
         };
         let session = Arc::new(Session {
-            data: Mutex::new(SessionData { snapshot, history: History::default(), dataset: None, query: None }),
+            data: Mutex::new(SessionData { snapshot, history: History::default(), dataset: None, query: None, baseline: EditState::default() }),
             prepare: Mutex::new(task.clone()),
         });
         {
@@ -469,6 +487,27 @@ impl Engine {
         data.snapshot.columns = manifest.columns.clone();
         data.snapshot.preview.clear();
         data.snapshot.cache_hit = cache_hit;
+        let metadata_path = color_path(&manifest.path);
+        if metadata_path.exists() {
+            let loaded = (|| -> Result<EditState> {
+                ensure!(fs::metadata(&metadata_path)?.len() <= 16 * 1024 * 1024, "颜色标记文件超过 16MiB");
+                let metadata: ColorMetadata = serde_json::from_slice(&fs::read(&metadata_path)?)?;
+                ensure!(metadata.version == 1 && metadata.csv_hash == manifest.hash
+                    && metadata.has_headers == manifest.spec.has_headers && metadata.delimiter == manifest.spec.delimiter,
+                    "颜色标记与当前 CSV 内容或解析设置不匹配");
+                let edits = EditState { colors: metadata.colors, ..Default::default() };
+                editing::validate(&edits, manifest.columns.len(), manifest.rows, manifest.spec.max_field_bytes)?;
+                Ok(edits)
+            })();
+            match loaded {
+                Ok(edits) => {
+                    data.history.load_colors(&edits);
+                    data.snapshot.view = (*data.history.present).clone();
+                    data.baseline = edits;
+                }
+                Err(error) => data.snapshot.warnings.push(format!("未加载颜色标记：{error}")),
+            }
+        }
         diagnostics::record("info", "dataset_ready", serde_json::json!({
             "tabId": data.snapshot.id, "rows": manifest.rows,
             "columns": manifest.columns.len(), "cacheHit": cache_hit,
@@ -481,13 +520,17 @@ impl Engine {
         Ok(OpenOptions::new().read(true).write(true).create(true).truncate(false)
             .open(self.config.cache_dir.join("leases").join(format!("{name}.lock")))?)
     }
-    fn resolve(conn: &Connection, dataset: &Dataset, value: &FilterValue) -> Result<String> {
+    fn resolve(conn: &Connection, dataset: &Dataset, view: &ViewState, value: &FilterValue) -> Result<String> {
         match value {
             FilterValue::Text { text } => Ok(text.clone()),
             FilterValue::Reference { rid, column, digest, byte_length } => {
                 let c = column_name(*column, dataset.manifest.columns.len())?;
                 let rid: u64 = rid.parse()?;
-                let text: String = conn.query_row(&format!("SELECT {c} FROM {}.data WHERE _source_rid = ?", dataset.alias), [rid], |row| row.get(0))?;
+                let text: String = if let Some(value) = view.edits.cells.get(&rid).and_then(|cells| cells.get(column)) {
+                    value.clone()
+                } else {
+                    conn.query_row(&format!("SELECT {c} FROM {}.data WHERE _source_rid = ?", dataset.alias), [rid], |row| row.get(0))?
+                };
                 if !digest.is_empty() {
                     ensure!(text.len() as u64 == *byte_length && blake3::hash(text.as_bytes()).to_hex().as_str() == digest,
                         "值引用与文件版本不匹配，请重新打开筛选菜单");
@@ -497,7 +540,8 @@ impl Engine {
         }
     }
     pub fn commit(self: &Arc<Self>, tab: &str, base_revision: u64, view: ViewState) -> Result<SessionSnapshot> {
-        ensure!(serde_json::to_vec(&view)?.len() <= 4 * 1024 * 1024, "筛选状态超过 4MiB");
+        ensure!(serde_json::to_vec(&(&view.filters, &view.sort))?.len() <= 4 * 1024 * 1024, "筛选状态超过 4MiB");
+        ensure!(serde_json::to_vec(&view.edits)?.len() <= 16 * 1024 * 1024, "编辑和颜色状态超过 16MiB，请先另存为 CSV 后继续编辑");
         let session = self.session(tab)?;
         let should_query;
         let projection;
@@ -507,6 +551,12 @@ impl Engine {
             ensure!(!matches!(data.snapshot.status.as_str(), "closed" | "stale"), "文件已关闭或源发生变化");
             // Compile before committing to catch invalid columns and bound semantics.
             let width = data.snapshot.columns.len();
+            if view.edits != data.snapshot.view.edits {
+                let dataset = data.dataset.as_ref().context("完整数据就绪后才能编辑")?;
+                editing::validate(&view.edits, width, dataset.manifest.rows, data.snapshot.parse_spec.max_field_bytes)?;
+            }
+            ensure!(view.filters.keys().chain(view.sort.iter().map(|s| &s.column))
+                .all(|column| !view.edits.deleted_columns.contains(column)), "已删除的列不能用于筛选或排序");
             compile_filters(&view, None, width, |v| match v {
                 FilterValue::Text { text } => Ok(text.clone()),
                 _ => Ok(String::new()),
@@ -514,6 +564,7 @@ impl Engine {
             compile_order(&view, width)?;
             if !data.history.commit(view) { return Ok(data.snapshot.clone()); }
             data.snapshot.view = (*data.history.present).clone();
+            data.snapshot.modified = data.snapshot.view.edits != data.baseline;
             data.snapshot.revision += 1;
             data.snapshot.can_undo = data.history.can_undo();
             data.snapshot.can_redo = data.history.can_redo();
@@ -535,6 +586,7 @@ impl Engine {
             let changed = if redo { data.history.redo() } else { data.history.undo() };
             if !changed { return Ok(data.snapshot.clone()); }
             data.snapshot.view = (*data.history.present).clone();
+            data.snapshot.modified = data.snapshot.view.edits != data.baseline;
             data.snapshot.revision += 1;
             data.snapshot.can_undo = data.history.can_undo();
             data.snapshot.can_redo = data.history.can_redo();
@@ -558,7 +610,21 @@ impl Engine {
         for &c in &projection { column_name(c, dataset.manifest.columns.len())?; }
         let query_id = id();
         let task = Task::new(tab, 1);
-        let direct = view.filters.is_empty() && view.sort.is_empty();
+        let direct = view.filters.is_empty() && view.sort.is_empty() && view.edits.deleted_rows.is_empty();
+        if let Some(old) = previous.as_ref().filter(|q| q.store.complete()
+            && q.view.filters == view.filters && q.view.sort == view.sort && q.view.edits.same_data(&view.edits)
+            && projection.iter().all(|c| q.store.columns.contains(c))) {
+            let query = Arc::new(Query { id: query_id.clone(), task, store: old.store.clone(), view, revision, direct: old.direct });
+            let mut data = session.data.lock().unwrap();
+            ensure!(data.snapshot.revision == revision, "Stale：查询上下文已过期");
+            data.query = Some(query);
+            data.snapshot.query = Some(QuerySnapshot {
+                id: query_id.clone(), revision, status: "ready".into(),
+                generated_rows: old.store.generated().to_string(), exact_total: Some(old.store.generated().to_string()),
+                projection, error: None,
+            });
+            return Ok(query_id);
+        }
         let previous = previous.filter(|q| q.revision == revision && q.view == view);
         if let Some(q) = &previous {
             let status = session.data.lock().unwrap().snapshot.query.as_ref().map(|s| s.status.clone()).unwrap_or_default();
@@ -660,8 +726,8 @@ impl Engine {
         }
         let selected = query.store.columns.iter().map(|c| format!("d.c{c}")).collect::<Vec<_>>().join(", ");
         let mut statement = conn.prepare(&format!(
-            "SELECT d._source_rid, {selected} FROM projection_positions p JOIN {}.data d ON d._source_rid=p.rid ORDER BY p.position",
-            dataset.alias))?;
+            "SELECT d._source_rid, {selected} FROM projection_positions p JOIN {} d ON d._source_rid=p.rid ORDER BY p.position",
+            editing::source(&dataset.alias, dataset.manifest.columns.len(), &query.view.edits)))?;
         let mut writer = query.store.writer(self.config.result_limit_bytes)?;
         for batch in statement.stream_arrow([])? {
             query.task.check()?;
@@ -679,7 +745,7 @@ impl Engine {
         self.disk_check()?;
         let conn = self.connection()?;
         query.task.bind(&conn);
-        let filters = compile_filters(&query.view, None, dataset.manifest.columns.len(), |v| Self::resolve(&conn, dataset, v))?;
+        let filters = compile_filters(&query.view, None, dataset.manifest.columns.len(), |v| Self::resolve(&conn, dataset, &query.view, v))?;
         let columns = query.store.columns.iter().map(|c| format!("c{c}")).collect::<Vec<_>>().join(", ");
         let mut writer = query.store.writer(self.config.result_limit_bytes)?;
         self.update_query_progress(session, &query.id, 0);
@@ -687,7 +753,8 @@ impl Engine {
         for (lo, hi) in ranges {
             query.task.check()?;
             let order = compile_order(&query.view, dataset.manifest.columns.len())?;
-            let sql = format!("SELECT _source_rid, {columns} FROM {}.data WHERE ({}) AND _source_rid BETWEEN {lo} AND {hi} ORDER BY {order}", dataset.alias, filters.sql);
+            let sql = format!("SELECT _source_rid, {columns} FROM {} WHERE ({}) AND _source_rid BETWEEN {lo} AND {hi} ORDER BY {order}",
+                editing::source(&dataset.alias, dataset.manifest.columns.len(), &query.view.edits), filters.sql);
             let mut statement = conn.prepare(&sql)?;
             let batches = statement.stream_arrow(params_from_iter(filters.parameters.iter()))?;
             for batch in batches {
@@ -734,8 +801,8 @@ impl Engine {
         }).collect::<Result<Vec<_>>>()?.join(", ");
         let selected = if selected.is_empty() { String::new() } else { format!(", {selected}") };
         let mut statement = conn.prepare(&format!(
-            "SELECT _source_rid{selected} FROM {}.data WHERE _source_rid BETWEEN {} AND {} ORDER BY _source_rid",
-            dataset.alias, start + 1, start + count as u64))?;
+            "SELECT _source_rid{selected} FROM {} WHERE _source_rid BETWEEN {} AND {} ORDER BY _source_rid",
+            editing::source(&dataset.alias, dataset.manifest.columns.len(), &query.view.edits), start + 1, start + count as u64))?;
         let mut batches = vec![];
         for batch in statement.stream_arrow([])? { batches.push(batch?); }
         let schema = batches.first().context("没有数据")?.schema();
@@ -766,8 +833,11 @@ impl Engine {
     }
     pub fn full_cell(&self, tab: &str, rid: u64, column: usize) -> Result<String> {
         let session = self.session(tab)?;
-        let dataset = session.data.lock().unwrap().dataset.clone().context("数据尚未就绪")?;
-        Self::resolve(&self.connection()?, &dataset, &FilterValue::Reference { rid: rid.to_string(), column, digest: String::new(), byte_length: 0 })
+        let (dataset, view) = {
+            let data = session.data.lock().unwrap();
+            (data.dataset.clone().context("数据尚未就绪")?, data.snapshot.view.clone())
+        };
+        Self::resolve(&self.connection()?, &dataset, &view, &FilterValue::Reference { rid: rid.to_string(), column, digest: String::new(), byte_length: 0 })
     }
     pub fn candidates(self: &Arc<Self>, tab: &str, revision: u64, column: usize, search: String) -> Result<String> {
         self.candidates_with_rules(tab, revision, column, search, vec![], vec![])
@@ -804,9 +874,10 @@ impl Engine {
                 let conn = engine.connection()?;
                 candidate.task.bind(&conn);
                 candidate.snapshot.lock().unwrap().status = "building".into();
-                let mut compiled = compile_filters(&view, Some(column), dataset.manifest.columns.len(), |v| Self::resolve(&conn, &dataset, v))?;
-                let sql = format!("SELECT min(_source_rid)::UBIGINT AS _source_rid, c{column} FROM {}.data
-                    WHERE ({}) AND contains(c{column}, ?) GROUP BY c{column} ORDER BY c{column}", dataset.alias, compiled.sql);
+                let mut compiled = compile_filters(&view, Some(column), dataset.manifest.columns.len(), |v| Self::resolve(&conn, &dataset, &view, v))?;
+                let source = editing::source(&dataset.alias, dataset.manifest.columns.len(), &view.edits);
+                let sql = format!("SELECT min(_source_rid)::UBIGINT AS _source_rid, c{column} FROM {source}
+                    WHERE ({}) AND contains(c{column}, ?) GROUP BY c{column} ORDER BY c{column}", compiled.sql);
                 compiled.parameters.push(search);
                 let mut statement = conn.prepare(&sql)?;
                 let mut writer = candidate.store.writer(1024 * 1024 * 1024)?;
@@ -823,17 +894,17 @@ impl Engine {
                     let mut points = vec![];
                     let mut bytes = 0usize;
                     for value in selected_values {
-                        let text = Self::resolve(&conn, &dataset, &value)?;
+                        let text = Self::resolve(&conn, &dataset, &view, &value)?;
                         bytes = bytes.saturating_add(text.len());
                         points.push((value, if bytes <= 4 * 1024 * 1024 { Some(text) } else { None }));
                     }
-                    let mut availability = compile_filters(&view, Some(column), dataset.manifest.columns.len(), |v| Self::resolve(&conn, &dataset, v))?;
+                    let mut availability = compile_filters(&view, Some(column), dataset.manifest.columns.len(), |v| Self::resolve(&conn, &dataset, &view, v))?;
                     let values: Vec<_> = points.iter().filter_map(|(_, s)| s.as_ref()).cloned().collect();
                     let mut present = std::collections::BTreeSet::new();
                     if !values.is_empty() {
                         let placeholders = vec!["?"; values.len()].join(",");
-                        let sql = format!("SELECT c{column} FROM {}.data WHERE ({}) AND c{column} IN ({placeholders}) GROUP BY c{column}",
-                            dataset.alias, availability.sql);
+                        let sql = format!("SELECT c{column} FROM {source} WHERE ({}) AND c{column} IN ({placeholders}) GROUP BY c{column}",
+                            availability.sql);
                         availability.parameters.extend(values);
                         let mut statement = conn.prepare(&sql)?;
                         let rows = statement.query_map(params_from_iter(availability.parameters.iter()), |r| r.get::<_, String>(0))?;
@@ -970,15 +1041,29 @@ impl Engine {
     }
     pub fn export(self: &Arc<Self>, tab: &str, query_id: &str, spec: ExportSpec) -> Result<String> {
         ensure!(!spec.path.exists(), "目标已存在，请选择新文件名");
+        ensure!(!color_path(&spec.path).exists(), "目标的颜色标记文件已存在，请选择新文件名");
         let session = self.session(tab)?;
-        let (dataset, query, total) = {
+        let (dataset, mut query, mut total) = {
             let data = session.data.lock().unwrap();
             ensure!(data.snapshot.status == "ready", "源数据尚未就绪或已变化");
             let q = data.query.clone().context("尚无结果")?;
             ensure!(q.id == query_id && q.store.complete(), "结果尚未完整生成");
             (data.dataset.clone().unwrap(), q.clone(), q.store.generated())
         };
-        for &column in &spec.columns { column_name(column, dataset.manifest.columns.len())?; }
+        if spec.all_rows {
+            let mut view = query.view.clone();
+            view.filters.clear();
+            total = dataset.manifest.rows - view.edits.deleted_rows.len() as u64;
+            query = Arc::new(Query {
+                id: query.id.clone(), task: query.task.clone(), store: query.store.clone(),
+                view, revision: query.revision, direct: false,
+            });
+        }
+        for &column in &spec.columns {
+            column_name(column, dataset.manifest.columns.len())?;
+            ensure!(!query.view.edits.deleted_columns.contains(&column), "已删除的列不能导出");
+        }
+        ensure!(spec.columns.iter().collect::<std::collections::BTreeSet<_>>().len() == spec.columns.len(), "导出列不能重复");
         ensure!(!spec.columns.is_empty(), "请选择导出列");
         ensure!(spec.delimiter.len() == 1 && matches!(spec.delimiter.as_bytes()[0], b',' | b';' | b'\t' | b'|'), "无效分隔符");
         ensure!(matches!(spec.encoding.as_str(), "utf-8" | "gbk" | "gb18030"), "无效编码");
@@ -1015,29 +1100,43 @@ impl Engine {
         export.snapshot.lock().unwrap().status = "running".into();
         let conn = self.connection()?;
         export.task.bind(&conn);
-        let compiled = compile_filters(&query.view, None, dataset.manifest.columns.len(), |v| Self::resolve(&conn, dataset, v))?;
+        let compiled = compile_filters(&query.view, None, dataset.manifest.columns.len(), |v| Self::resolve(&conn, dataset, &query.view, v))?;
         let order = compile_order(&query.view, dataset.manifest.columns.len())?;
         let selected = spec.columns.iter().map(|c| format!("c{c}")).collect::<Vec<_>>().join(", ");
-        let mut statement = conn.prepare(&format!("SELECT {selected} FROM {}.data WHERE {} ORDER BY {order}", dataset.alias, compiled.sql))?;
+        let mut statement = conn.prepare(&format!("SELECT _source_rid, {selected} FROM {} WHERE {} ORDER BY {order}",
+            editing::source(&dataset.alias, dataset.manifest.columns.len(), &query.view.edits), compiled.sql))?;
         let parent = spec.path.parent().context("目标路径无效")?;
         ensure!(parent.is_dir(), "目标目录不存在");
         ensure!(fs2::available_space(parent)? > self.config.reserve_bytes, "导出目标磁盘空间不足");
         let temporary = parent.join(format!(".{}.{}.part", spec.path.file_name().unwrap_or_default().to_string_lossy(), id()));
+        let metadata_target = color_path(&spec.path);
+        let metadata_temporary = color_path(&temporary);
+        let mut published_metadata = false;
         let result = (|| -> Result<()> {
-            let mut file = BufWriter::with_capacity(1024 * 1024, OpenOptions::new().write(true).create_new(true).open(&temporary)?);
+            let mut file = HashingWriter {
+                output: BufWriter::with_capacity(1024 * 1024, OpenOptions::new().write(true).create_new(true).open(&temporary)?),
+                hasher: blake3::Hasher::new(),
+            };
             if spec.bom && spec.encoding == "utf-8" { file.write_all(&[0xef, 0xbb, 0xbf])?; }
             let mut writer = csv::WriterBuilder::new().delimiter(spec.delimiter.as_bytes()[0])
                 .terminator(csv::Terminator::CRLF).from_writer(CsvBuffer(std::cell::RefCell::new(Vec::with_capacity(1024 * 1024))));
             if spec.headers { writer.write_record(spec.columns.iter().map(|&c| &dataset.manifest.columns[c].original_name))?; }
             let mut written = 0u64;
+            let mut colors = BTreeMap::new();
             for batch in statement.stream_arrow(params_from_iter(compiled.parameters.iter()))? {
                 export.task.check()?;
                 let batch = batch?;
                 for row in 0..batch.num_rows() {
                     export.task.check()?;
-                    let fields = batch.columns().iter().map(|array| array_value_to_string(array.as_ref(), row)).collect::<std::result::Result<Vec<_>, _>>()?;
+                    let rid = batch.column(0).as_any().downcast_ref::<UInt64Array>().context("导出记录序号无效")?.value(row);
+                    let fields = batch.columns()[1..].iter().map(|array| array_value_to_string(array.as_ref(), row)).collect::<std::result::Result<Vec<_>, _>>()?;
                     writer.write_record(&fields)?;
                     written += 1;
+                    if let Some(marked) = query.view.edits.colors.get(&rid) {
+                        let exported: BTreeMap<_, _> = spec.columns.iter().enumerate()
+                            .filter_map(|(new_column, original_column)| marked.get(original_column).map(|color| (new_column, color.clone()))).collect();
+                        if !exported.is_empty() { colors.insert(written, exported); }
+                    }
                     if written % 128 == 0 || writer.get_ref().0.borrow().len() >= 1024 * 1024 {
                         flush_encoded(&mut writer, &mut file, &spec.encoding)?;
                     }
@@ -1048,13 +1147,30 @@ impl Engine {
             flush_encoded(&mut writer, &mut file, &spec.encoding)?;
             ensure!(written == total, "导出数量与冻结结果不一致");
             file.flush()?;
-            file.get_ref().sync_all()?;
+            file.output.get_ref().sync_all()?;
+            let csv_hash = file.hasher.finalize().to_hex().to_string();
             drop(file);
             export.task.check()?;
+            if !colors.is_empty() {
+                let metadata = ColorMetadata {
+                    version: 1, csv_hash, has_headers: spec.headers,
+                    delimiter: Some(spec.delimiter.clone()), colors,
+                };
+                let mut output = OpenOptions::new().write(true).create_new(true).open(&metadata_temporary)?;
+                serde_json::to_writer(&mut output, &metadata)?;
+                output.sync_all()?;
+                drop(output);
+                publish_new_file(&metadata_temporary, &metadata_target)?;
+                published_metadata = true;
+            }
             publish_new_file(&temporary, &spec.path)?;
             Ok(())
         })();
-        if result.is_err() { let _ = fs::remove_file(&temporary); }
+        if result.is_err() {
+            let _ = fs::remove_file(&temporary);
+            let _ = fs::remove_file(&metadata_temporary);
+            if published_metadata { let _ = fs::remove_file(&metadata_target); }
+        }
         result
     }
     pub fn export_snapshot(&self, id: &str) -> Result<ExportSnapshot> {
@@ -1128,6 +1244,18 @@ fn filetime_touch(path: &Path) -> Result<()> {
 }
 
 struct CsvBuffer(std::cell::RefCell<Vec<u8>>);
+struct HashingWriter<W: Write> {
+    output: W,
+    hasher: blake3::Hasher,
+}
+impl<W: Write> Write for HashingWriter<W> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let written = self.output.write(bytes)?;
+        self.hasher.update(&bytes[..written]);
+        Ok(written)
+    }
+    fn flush(&mut self) -> std::io::Result<()> { self.output.flush() }
+}
 impl Write for CsvBuffer {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
         self.0.get_mut().extend_from_slice(bytes);

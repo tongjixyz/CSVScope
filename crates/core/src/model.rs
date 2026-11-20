@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 pub const FORMAT_VERSION: u32 = 1;
@@ -113,9 +113,35 @@ fn text_sort() -> String { "text".into() }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct EditState {
+    #[serde(default)]
+    pub cells: BTreeMap<u64, BTreeMap<usize, String>>,
+    #[serde(default)]
+    pub deleted_rows: BTreeSet<u64>,
+    #[serde(default)]
+    pub deleted_columns: BTreeSet<usize>,
+    #[serde(default)]
+    pub colors: BTreeMap<u64, BTreeMap<usize, String>>,
+}
+
+impl EditState {
+    pub fn is_empty(&self) -> bool {
+        self.cells.is_empty() && self.deleted_rows.is_empty()
+            && self.deleted_columns.is_empty() && self.colors.is_empty()
+    }
+    pub fn same_data(&self, other: &Self) -> bool {
+        self.cells == other.cells && self.deleted_rows == other.deleted_rows
+            && self.deleted_columns == other.deleted_columns
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct ViewState {
     pub filters: BTreeMap<usize, ColumnFilter>,
     pub sort: Vec<SortKey>,
+    #[serde(default, skip_serializing_if = "EditState::is_empty")]
+    pub edits: EditState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,6 +178,7 @@ pub struct SessionSnapshot {
     pub can_redo: bool,
     pub query: Option<QuerySnapshot>,
     pub cache_hit: bool,
+    pub modified: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -204,6 +231,8 @@ pub struct ExportSpec {
     pub encoding: String,
     pub bom: bool,
     pub headers: bool,
+    #[serde(default)]
+    pub all_rows: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

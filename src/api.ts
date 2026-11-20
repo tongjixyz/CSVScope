@@ -27,9 +27,9 @@ export const api = {
   cancel: (tabId: string) => invoke<void>("cancel_task", { tabId }),
   close: (tabId: string) => invoke<void>("close_file", { tabId }),
   activate: (tabId: string) => invoke<void>("activate_file", { tabId }),
-  export: (tab: Session, path: string, columns: number[], bom: boolean, encoding: string) => invoke<string>("start_export", {
+  export: (tab: Session, path: string, columns: number[], bom: boolean, encoding: string, allRows = false) => invoke<string>("start_export", {
     tabId: tab.id, queryId: tab.query!.id, spec: {
-      path, columns, delimiter: tab.parseSpec.delimiter ?? ",", encoding, bom, headers: tab.parseSpec.hasHeaders,
+      path, columns, delimiter: tab.parseSpec.delimiter ?? ",", encoding, bom, headers: tab.parseSpec.hasHeaders, allRows,
     },
   }),
   exportStatus: (exportId: string) => invoke<ExportStatus>("export_status", { exportId }),
@@ -48,5 +48,6 @@ export async function chooseFiles(): Promise<string[]> {
   return paths ? (Array.isArray(paths) ? paths : [paths]) : [];
 }
 export async function chooseExport(name: string): Promise<string | null> {
-  return save({ defaultPath: name.replace(/\.[^.]+$/, "") + "-filtered.csv", filters: [{ name: "CSV", extensions: ["csv"] }] });
+  const path = await save({ title: "另存为 CSV", defaultPath: name.replace(/\.[^.]+$/, "") + "-edited.csv", filters: [{ name: "CSV 文件", extensions: ["csv"] }] });
+  return path && !path.toLowerCase().endsWith(".csv") ? `${path}.csv` : path;
 }

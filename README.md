@@ -1,8 +1,8 @@
 # CSVScope · 数览
 
-面向 Windows 10/11 x64 的本地大型 CSV 查看、联动筛选、排序与导出工具。Tauri 2 / Rust / React 18 / Glide Data Grid / 原生 DuckDB；正常读取、查询与导出不访问远程服务。
+面向 Windows 10/11 x64 的本地大型 CSV 编辑、联动筛选、排序、标记与保存工具。Tauri 2 / Rust / React 18 / Glide Data Grid / 原生 DuckDB；正常读取、查询、编辑与保存不访问远程服务。
 
-当前版本为 **0.1.1 Preview**。实际运行与测量记录以 `docs/implementation-status.zh-CN.md` 和 `docs/benchmarks.zh-CN.md` 为准。设计基线在 `docs/architecture.zh-CN.md`，其中性能目标不能当成实测值。
+当前版本为 **0.2.0 Preview**。升级内容见 `CHANGELOG.md`；版本如何迭代、如何同步和发布见 `docs/versioning.zh-CN.md`。实际运行与测量记录以 `docs/implementation-status.zh-CN.md` 和 `docs/benchmarks.zh-CN.md` 为准。设计基线在 `docs/architecture.zh-CN.md`，其中性能目标不能当成实测值。
 
 ## 运行
 
@@ -22,13 +22,17 @@ GitHub Release 提供便携 ZIP、常规 NSIS 安装器和离线 NSIS 安装器�
 - 列标题菜单：搜索完整候选集合、复选框多选、全选或取消全选、全选全部搜索命中、文本条件、数值或日期范围、清除此列。
 - 当前列候选值应用其他列的筛选，排除当前列自己的条件。同列勾选为 OR，不同列为 AND。
 - 候选菜单每次显示 200 项，上一页/下一页不会丢失勾选；确认才提交，取消丢弃草稿。
-- 标题点击：文本升序、降序、恢复源顺序。菜单可明确选择文本、精确数值、无时区日期时间排序。
+- 表头常驻下拉三角，点击打开筛选和排序；已筛选列显示绿色漏斗和底色。菜单可明确选择文本、精确数值、无时区日期时间排序。
+- 点击表头选择列，`Ctrl` 多选、`Shift` 连续多选；右键可隐藏或删除所选列。点击源记录号选择行，支持 `Ctrl` / `Shift` 多选，右键删除所选行。删除可撤销，隐藏可在列布局恢复。
 - `Ctrl+Z`：撤销。`Ctrl+Y` / `Ctrl+Shift+Z`：重做。每个标签有独立历史。
-- 双击单元格：查看及复制完整字段。表格显示的长文本会截断。
+- 双击单元格或 `F2`：编辑及复制完整字段，`Ctrl+Enter` 应用。表格显示的长文本会截断，编辑时读取完整值。支持向已有单元格粘贴多行多列文本；`Delete` 清空选区。
+- 右键所选单元格区域可设置/清除六种颜色。颜色按源记录和列绑定，排序、筛选、隐藏列后仍对应原单元格；文本、删除及标色共同支持撤销/重做。
 - `Ctrl+C`：复制选中的单元格区域；一次最多 100,000 个单元格、8MiB，更多内容请导出。
 - 底部行号输入：按筛选/排序后的结果位置跳转。记录序号列显示源逻辑记录号；引号内换行不增加记录号。
 - 列布局：调整列宽、隐藏列、固定前几列。切换标签保留布局、浏览位置和当前窗口内的选区。
-- 导出：选择全部原始列或可见列，遵循当前排序；导出期间冻结条件。
+- `Ctrl+S` / `Ctrl+Shift+S` 或“另存为 CSV”：使用新文件名保存真实 `.csv`。默认保存全部记录和全部保留列（包含隐藏列）；可改为当前筛选结果/仅可见列。输出包含文本修改，排除已删除的行列，遵循当前排序。
+- CSV 只能保存文本。存在标色时，同时保存 `<文件名>.csv.csvscope.json`；重新打开时校验完整文件指纹后恢复颜色。移动/备份时请保留这两个文件。外部修改 CSV 后旧标色会被忽略并提示。
+- 未保存的修改在标签显示 `*`，关闭标签或退出时提示保存。每次编辑/标色最多 100,000 个单元格，编辑状态总预算为 16MiB；达到预算后另存为并重新打开输出文件继续编辑。
 - 缓存管理：查看路径、占用及清理未被打开文件/任务占用的基础缓存。
 
 无排序时保持源记录顺序；排序并列值按源记录号排序。表格的前后翻页和远跳读取已生成结果，不重新解析 CSV、不反复执行筛选，也不使用不断增大的 OFFSET。
@@ -101,15 +105,15 @@ git remote add origin https://github.com/tongjixyz/CSVScope.git
 git push -u origin main
 ```
 
-发布当前 `0.1.1` 版本：
+发布当前 `0.2.0` 版本：
 
 ```powershell
 npm run check:version
-git tag -a v0.1.1 -m "CSVScope 0.1.1"
-git push origin v0.1.1
+git tag -a v0.2.0 -m "CSVScope 0.2.0"
+git push origin v0.2.0
 ```
 
-推送 `v*` 标签后，工作流在测试与打包通过后自动创建 GitHub Release，并上传上述文件。标签必须等于 `v` 加项目版本；`package.json`、`package-lock.json`、`Cargo.toml` 的工作区版本和 `src-tauri/tauri.conf.json` 必须一致。后续版本先同步修改并提交这些文件，再推送新标签。含 `-` 的版本标签（例如 `v0.2.0-beta.1`）会标记为预发布。
+推送 `v*` 标签后，工作流在测试与打包通过后自动创建 GitHub Release，并上传上述文件。标签必须等于 `v` 加项目版本；`package.json`、`package-lock.json`、`Cargo.toml`、`Cargo.lock` 的工作区包版本和 `src-tauri/tauri.conf.json` 必须一致。后续使用 `npm run version:bump -- patch`（修复）或 `minor`（新功能）同步版本，再更新 `CHANGELOG.md`、验证并提交。详细规则和 Git 流程见 `docs/versioning.zh-CN.md`。含 `-` 的版本标签（例如 `v0.3.0-beta.1`）会标记为预发布。
 
 发布使用 GitHub 自动提供的 `GITHUB_TOKEN`，无需另配个人访问令牌；发布任务申请 `contents: write` 权限。若仓库或组织策略限制该权限，需要在 GitHub 侧允许工作流创建 Release。安装器当前不做代码签名。
 
@@ -143,13 +147,15 @@ git push origin v0.1.1
 | `crates/core/src/parser.rs` | 有预算的成熟 CSV 增量解析、编码与稳定源读取 |
 | `crates/core/src/filter.rs` | 参数化 SQL、联动候选语义、明确的类型解释 |
 | `crates/core/src/history.rs` | 轻量撤销/重做与容量 |
+| `crates/core/src/editing.rs` | 会话级文本修改、行列删除、颜色验证与有效数据关系 |
 | `crates/core/src/store.rs` | Arrow 分块结果、记录索引、显示页与二进制 IPC |
 | `crates/core/src/engine.rs` | 文件会话、缓存租约、准备、调度、查询、候选与导出 |
 | `crates/core/src/model.rs` | 前后端契约及全局初始预算 |
 | `src-tauri/src/main.rs` | Tauri 命令、阻塞任务适配、原始二进制响应 |
 | `src/App.tsx` | 多标签、Glide 虚拟表格、按需列与页、布局与历史 |
 | `src/FilterMenu.tsx` | 候选分页、搜索、草稿、规则选择与类型排序 |
+| `src/ContextMenu.tsx` / `src/editor.ts` | 数据右键菜单、颜色与选区操作 |
 | `scripts/` | 构建、回归、真实桌面检查和可复现基准 |
 
-首版只读，不提供单元格编辑、公式、实时日志追尾或跨文件 SQL。
+0.2.0 提供文本单元格编辑、粘贴、删除行列、隐藏列和颜色标记；不提供公式、插入新行列、实时日志追尾或跨文件 SQL。编辑保留在当前标签，另存为创建新文件，源文件不被改写。
 初始资源策略最多同时打开 16 个标签，共用一个 DuckDB 内存预算和一个重任务名额；不会给每个文件分别分配 2GiB。

@@ -1,4 +1,4 @@
-use crate::model::ViewState;
+use crate::model::{EditState, ViewState};
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -15,6 +15,11 @@ impl Default for History {
 }
 
 impl History {
+    pub fn load_colors(&mut self, colors: &EditState) {
+        for state in self.past.iter_mut().chain(self.future.iter_mut()).chain(std::iter::once(&mut self.present)) {
+            Arc::make_mut(state).edits.colors = colors.colors.clone();
+        }
+    }
     pub fn commit(&mut self, state: ViewState) -> bool {
         if *self.present == state { return false; }
         self.past.push_back(self.present.clone());

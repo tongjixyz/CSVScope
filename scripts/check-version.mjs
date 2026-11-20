@@ -10,6 +10,14 @@ const cargo = readFileSync(new URL("Cargo.toml", workspace), "utf8");
 const workspacePackage = cargo.split("[workspace.package]")[1]?.split("\n[")[0];
 const cargoVersion = workspacePackage?.match(/^\s*version\s*=\s*"([^"]+)"/m)?.[1];
 const version = packageJson.version;
+if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(version)) {
+  throw new Error(`Invalid release version: ${version}`);
+}
+const cargoLock = readFileSync(new URL("Cargo.lock", workspace), "utf8");
+for (const name of ["csvscope", "csvscope-core"]) {
+  const actual = cargoLock.match(new RegExp(`\\[\\[package\\]\\]\\r?\\nname = "${name}"\\r?\\nversion = "([^"]+)"`))?.[1];
+  if (actual !== version) throw new Error(`Cargo.lock ${name}: expected ${version}, found ${actual}`);
+}
 
 for (const [file, actual] of [
   ["package-lock.json", packageLock.version],
@@ -21,6 +29,8 @@ for (const [file, actual] of [
     throw new Error(`${file}: expected version ${version}, found ${actual}`);
   }
 }
+const changelog = readFileSync(new URL("CHANGELOG.md", workspace), "utf8");
+if (!changelog.includes(`## [${version}]`)) throw new Error(`CHANGELOG.md is missing the ${version} release entry`);
 
 const tag =
   process.argv[2] ??

@@ -118,7 +118,7 @@ fn main() -> Result<()> {
                     if args[1] == "exercise" {
                         ensure!(state.columns.len() >= 5 && state.rows_read.parse::<u64>()? > 1, "exercise 用于 csvbench 生成的至少 5 列数据");
                         let selected = engine.full_cell(&tab, 2, 0)?;
-                        let mut view = ViewState { filters: BTreeMap::from([(0, equals(selected))]), sort: vec![] };
+                        let mut view = ViewState { filters: BTreeMap::from([(0, equals(selected))]), sort: vec![], ..Default::default() };
                         let query_start = Instant::now();
                         engine.commit(&tab, state.revision, view.clone())?;
                         let first = wait(&engine, &tab)?;
@@ -140,7 +140,7 @@ fn main() -> Result<()> {
                         let export_start = Instant::now();
                         let export_id = engine.export(&tab, &filtered.query.as_ref().unwrap().id, ExportSpec {
                             path: export_path.clone(), columns: (0..state.columns.len()).collect(), delimiter: ",".into(),
-                            encoding: "utf-8".into(), bom: false, headers: true,
+                            encoding: "utf-8".into(), bom: false, headers: true, all_rows: false,
                         })?;
                         loop {
                             let export = engine.export_snapshot(&export_id)?;
@@ -160,6 +160,7 @@ fn main() -> Result<()> {
                         let sort_start = Instant::now();
                         engine.commit(&tab, filtered.revision, ViewState {
                             filters: BTreeMap::new(), sort: vec![SortKey { column: 2, descending: true, interpretation: "text".into() }],
+                            ..Default::default()
                         })?;
                         let sorted = wait(&engine, &tab)?;
                         report["fullSortSeconds"] = sort_start.elapsed().as_secs_f64().into();
@@ -182,6 +183,7 @@ fn main() -> Result<()> {
                         let before_cancel = engine.snapshot(&tab)?;
                         engine.commit(&tab, before_cancel.revision, ViewState {
                             filters: BTreeMap::new(), sort: vec![SortKey { column: 4, descending: true, interpretation: "text".into() }],
+                            ..Default::default()
                         })?;
                         thread::sleep(Duration::from_millis(20));
                         let started = Instant::now();
