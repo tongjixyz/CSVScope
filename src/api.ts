@@ -1,4 +1,5 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { isTauri } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "./diagnostics";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { CacheUsage, CandidatePage, CandidateStatus, ExportStatus, FilterValue, ParseSpec, Session, ViewState } from "./types";
 
@@ -35,6 +36,7 @@ export const api = {
   cancelExport: (exportId: string) => invoke<void>("cancel_export", { exportId }),
   usage: () => invoke<CacheUsage>("cache_usage"),
   clearCache: () => invoke<string>("clear_cache"),
+  logs: () => invoke<string>("open_log_directory"),
 };
 
 export async function chooseFiles(): Promise<string[]> {

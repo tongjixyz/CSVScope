@@ -7,6 +7,7 @@ import {
   Undo2, X, ZoomIn,
 } from "lucide-react";
 import { api, chooseExport, chooseFiles, native } from "./api";
+import { reportFrontendError } from "./diagnostics";
 import FilterMenu from "./FilterMenu";
 import { filterSummary, formatBytes } from "./selection";
 import { defaultParseSpec, type CacheUsage, type ExportStatus, type Layout, type ParseSpec, type Session, type ViewState } from "./types";
@@ -49,6 +50,7 @@ export default function App() {
   const refreshRef = useRef<() => Promise<void>>(async () => {});
   const refreshTicket = useRef(0);
   const appliedRefresh = useRef(0);
+  const refreshing = useRef(false);
   const current = tabs.find(t => t.id === active);
   const layout = active ? layouts[active] ?? defaultLayout() : defaultLayout();
   const visible = useMemo(() => current?.columns.filter(c => !layout.hidden.includes(c.id)) ?? [], [current?.columns, layout.hidden]);
@@ -66,9 +68,13 @@ export default function App() {
     return [...frozenColumns, ...scrollableColumns].map(column => column.id);
   }, [visible, layout.frozen, region.x, region.width]);
 
-  const fail = useCallback((e: unknown) => setError(String(e)), []);
+  const fail = useCallback((e: unknown) => {
+    reportFrontendError("frontend_action_failed", e);
+    setError(String(e));
+  }, []);
   const refresh = useCallback(async () => {
-    if (!native || !mounted.current) return;
+    if (!native || !mounted.current || refreshing.current) return;
+    refreshing.current = true;
     const ticket = ++refreshTicket.current;
     try {
       const nextTabs = await api.sessions();
@@ -94,6 +100,7 @@ export default function App() {
       for (const id of seenRevision.current.keys()) if (!ids.has(id)) seenRevision.current.delete(id);
       setActive(previous => previous && nextTabs.some(t => t.id === previous) ? previous : nextTabs[0]?.id ?? null);
     } catch (e) { fail(e); }
+    finally { refreshing.current = false; }
   }, [fail]);
   refreshRef.current = refresh;
   useEffect(() => {
@@ -339,8 +346,8 @@ export default function App() {
 
   return <div className="app-shell">
     <header className="app-header">
-      <div className="brand"><div className="brand-mark"><FileSpreadsheet size={22} strokeWidth={1.8} /></div><div><strong>CSVScope</strong><span>大型数据，轻松查看</span></div><span className="version">PREVIEW 0.1</span></div>
-      <div className="header-actions"><span className="local-badge"><ShieldCheck size={14} />本地处理</span><button className="icon-button" aria-label="缓存管理" title="缓存管理" onClick={() => { if (native) void api.usage().then(setCache).catch(fail); }}><HardDrive size={18} /></button><button className="icon-button" aria-label="使用帮助" onClick={() => setNotice("Ctrl+O 打开文件 · 点击表头排序 · 表头菜单筛选 · Ctrl+Z 撤销 · 双击单元格查看完整内容")}><HelpCircle size={18} /></button></div>
+      <div className="brand"><div className="brand-mark"><FileSpreadsheet size={22} strokeWidth={1.8} /></div><div><strong>CSVScope</strong><span>大型数据，轻松查看</span></div><span className="version">PREVIEW 0.1.1</span></div>
+      <div className="header-actions"><span className="local-badge"><ShieldCheck size={14} />本地处理</span><button className="icon-button" aria-label="打开运行日志" title="打开运行日志" onClick={() => { if (native) void api.logs().then(path => setNotice(`运行日志：${path}`)).catch(fail); }}><FileText size={18} /></button><button className="icon-button" aria-label="缓存管理" title="缓存管理" onClick={() => { if (native) void api.usage().then(setCache).catch(fail); }}><HardDrive size={18} /></button><button className="icon-button" aria-label="使用帮助" onClick={() => setNotice("Ctrl+O 打开文件 · 点击表头排序 · 表头菜单筛选 · Ctrl+Z 撤销 · 双击单元格查看完整内容")}><HelpCircle size={18} /></button></div>
     </header>
     <nav className="tab-bar">
       {tabs.map(tab => <div key={tab.id} className={`file-tab ${active === tab.id ? "active" : ""}`} onClick={() => setActive(tab.id)}>

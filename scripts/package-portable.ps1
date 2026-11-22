@@ -1,5 +1,5 @@
 #Requires -Version 7.0
-param([switch]$SkipBuild)
+param([switch]$SkipBuild, [string]$OutputDirectory = '')
 $ErrorActionPreference = 'Stop'
 $packageWorkspace = Split-Path -Parent $PSScriptRoot
 Push-Location $packageWorkspace
@@ -9,7 +9,9 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Release 构建失败。' }
     }
     $version = (Get-Content -LiteralPath 'package.json' -Raw | ConvertFrom-Json).version
-    $destination = Join-Path $packageWorkspace "artifacts\CSVScope-$version-windows-x64"
+    $destination = if ($OutputDirectory) {
+        $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
+    } else { Join-Path $packageWorkspace "artifacts\CSVScope-$version-windows-x64" }
     [System.IO.Directory]::CreateDirectory($destination) | Out-Null
     Copy-Item -LiteralPath 'target\release\csvscope.exe' -Destination $destination
     foreach ($dll in Get-ChildItem -LiteralPath 'runtime' -File -Filter '*.dll') {
@@ -37,18 +39,22 @@ CSVScope $version Preview — Windows x64
 4. 列标题右侧菜单提供联动筛选；点击确定才应用。Ctrl+Z 撤销，Ctrl+Y 重做。
 5. 导出创建新文件；不会覆盖已有文件。可以选择全部列或可见列。
 6. 程序正常处理本地文件不需要网络。此便携包不含 WebView2 离线安装器，也不需要开发工具。
+7. 自动记录运行日志，默认位于程序旁的 logs 文件夹；右上角“打开运行日志”可直接定位。卡顿后请保留整个 logs 文件夹和大致发生时间。
 
 性能实测和未完成的验收项见 docs/benchmarks.zh-CN.md 与 docs/implementation-status.zh-CN.md。
 此预览版尚未在 16GB 机器和全新 Windows 环境完成验收。发行物未做代码签名。
 "@
     $quickStart | Set-Content -LiteralPath (Join-Path $destination '打开说明.txt') -Encoding utf8
+    $distributionFiles = @(Get-ChildItem -LiteralPath $destination -File -Recurse |
+        Where-Object { $_.Name -ne 'manifest.json' -and
+            [System.IO.Path]::GetRelativePath($destination, $_.FullName) -notmatch '^logs[\\/]' } |
+        Sort-Object FullName)
     $manifest = [ordered]@{
         product = 'CSVScope'; version = $version; platform = 'windows-x64'
         createdAt = [DateTimeOffset]::Now.ToString('o')
         cargoLockSha256 = (Get-FileHash -LiteralPath 'Cargo.lock' -Algorithm SHA256).Hash
         npmLockSha256 = (Get-FileHash -LiteralPath 'package-lock.json' -Algorithm SHA256).Hash
-        files = @(Get-ChildItem -LiteralPath $destination -File -Recurse |
-            Where-Object { $_.Name -ne 'manifest.json' } | Sort-Object FullName | ForEach-Object {
+        files = @($distributionFiles | ForEach-Object {
                 [ordered]@{ path = [System.IO.Path]::GetRelativePath($destination, $_.FullName); bytes = $_.Length
                     sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
             })
@@ -56,10 +62,20 @@ CSVScope $version Preview — Windows x64
     $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $destination 'manifest.json') -Encoding utf8
     $zipPath = "$destination.zip"
     if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath }
-    [System.IO.Compression.ZipFile]::CreateFromDirectory($destination, $zipPath, [System.IO.Compression.CompressionLevel]::Optimal, $true)
+    $archiveFiles = @($distributionFiles) + @(Get-Item -LiteralPath (Join-Path $destination 'manifest.json'))
+    $archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        $archiveRoot = Split-Path -Leaf $destination
+        foreach ($file in $archiveFiles) {
+            $relative = [System.IO.Path]::GetRelativePath($destination, $file.FullName).Replace('\', '/')
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName,
+                "$archiveRoot/$relative", [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+        }
+    } finally { $archive.Dispose() }
+    [System.IO.Directory]::CreateDirectory((Join-Path $packageWorkspace 'artifacts')) | Out-Null
     [ordered]@{
         folder = $destination; zip = $zipPath; zipBytes = (Get-Item -LiteralPath $zipPath).Length
         sha256 = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash
-        uncompressedBytes = (@(Get-ChildItem -LiteralPath $destination -File -Recurse) | Measure-Object -Property Length -Sum).Sum
+        uncompressedBytes = ($archiveFiles | Measure-Object -Property Length -Sum).Sum
     } | ConvertTo-Json | Tee-Object -FilePath (Join-Path $packageWorkspace 'artifacts\portable-package.json')
 } finally { Pop-Location }

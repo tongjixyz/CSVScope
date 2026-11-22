@@ -7,7 +7,7 @@ const files = JSON.parse(process.env.CSVSCOPE_BENCH_FILES ?? "[]").map(p => path
 assert.ok(files.length > 0, "Pass -Files to scripts/desktop-smoke.ps1");
 const output = process.env.CSVSCOPE_BENCH_OUTPUT ?? path.resolve(".bench/desktop-benchmark");
 await fs.mkdir(output, { recursive: true });
-const browser = await chromium.connectOverCDP("http://127.0.0.1:9223");
+const browser = await chromium.connectOverCDP(process.env.CSVSCOPE_TEST_CDP_URL ?? "http://127.0.0.1:9223");
 const page = browser.contexts()[0].pages()[0];
 const errors = [];
 page.on("pageerror", e => errors.push(String(e)));

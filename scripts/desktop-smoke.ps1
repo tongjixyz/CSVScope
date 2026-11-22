@@ -1,4 +1,4 @@
-param([switch]$Release, [string[]]$Files = @(), [string]$BinaryPath = '', [string]$CachePath = '')
+param([switch]$Release, [string[]]$Files = @(), [string]$BinaryPath = '', [string]$CachePath = '', [switch]$Diagnostics, [int]$DebugPort = 0)
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
 $profile = if ($Release) { 'release' } else { 'debug' }
@@ -9,13 +9,26 @@ $cacheSetting = $env:CSVSCOPE_CACHE_DIR
 $oldBenchFiles = $env:CSVSCOPE_BENCH_FILES
 $oldBenchOutput = $env:CSVSCOPE_BENCH_OUTPUT
 $oldTestStart = $env:CSVSCOPE_TEST_START_MS
+$oldCdpUrl = $env:CSVSCOPE_TEST_CDP_URL
+$oldWebviewProfile = $env:WEBVIEW2_USER_DATA_FOLDER
 $app = $null
 Push-Location $workspace
 try {
-    $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9223 --remote-debugging-address=127.0.0.1'
+    if ($DebugPort -eq 0) {
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+        $listener.Start()
+        $DebugPort = $listener.LocalEndpoint.Port
+        $listener.Stop()
+    }
+    $env:CSVSCOPE_TEST_CDP_URL = "http://127.0.0.1:$DebugPort"
+    $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$DebugPort --remote-debugging-address=127.0.0.1"
     $reportDirectory = Join-Path $workspace '.bench\desktop-smoke'
     $env:CSVSCOPE_CACHE_DIR = Join-Path $workspace '.bench\desktop-smoke-cache'
     $arguments = @('scripts/ui-smoke.mjs', '--desktop')
+    if ($Diagnostics) {
+        $reportDirectory = Join-Path $workspace '.bench\diagnostics-smoke'
+        $arguments = @('scripts/diagnostics-smoke.mjs')
+    }
     if ($Files.Count -gt 0) {
         $reportDirectory = Join-Path $workspace ('.bench\desktop-benchmark\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
         $env:CSVSCOPE_CACHE_DIR = Join-Path $workspace '.bench\desktop-benchmark-cache'
@@ -25,6 +38,7 @@ try {
     }
     if ($CachePath) { $env:CSVSCOPE_CACHE_DIR = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($CachePath) }
     [System.IO.Directory]::CreateDirectory($reportDirectory) | Out-Null
+    $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $reportDirectory 'webview-profile'
     $env:CSVSCOPE_TEST_START_MS = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds().ToString()
     $app = Start-Process -FilePath $binary -WorkingDirectory (Split-Path -Parent $binary) -PassThru -WindowStyle Hidden
     $ready = $false
@@ -32,7 +46,7 @@ try {
     while ([DateTime]::UtcNow -lt $deadline) {
         if ($app.HasExited) { throw "桌面进程启动后退出，退出码 $($app.ExitCode)" }
         try {
-            Invoke-RestMethod -Uri 'http://127.0.0.1:9223/json/version' -NoProxy -TimeoutSec 1 | Out-Null
+            Invoke-RestMethod -Uri "$env:CSVSCOPE_TEST_CDP_URL/json/version" -NoProxy -TimeoutSec 1 | Out-Null
             $ready = $true
             break
         } catch { Start-Sleep -Milliseconds 200 }
@@ -97,5 +111,7 @@ try {
     $env:CSVSCOPE_BENCH_FILES = $oldBenchFiles
     $env:CSVSCOPE_BENCH_OUTPUT = $oldBenchOutput
     $env:CSVSCOPE_TEST_START_MS = $oldTestStart
+    $env:CSVSCOPE_TEST_CDP_URL = $oldCdpUrl
+    $env:WEBVIEW2_USER_DATA_FOLDER = $oldWebviewProfile
     Pop-Location
 }
