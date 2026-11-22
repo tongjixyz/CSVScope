@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 param([switch]$Release)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'environment.ps1')

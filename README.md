@@ -44,7 +44,7 @@ GitHub Release 提供便携 ZIP、常规 NSIS 安装器和离线 NSIS 安装器�
 
 ## 构建
 
-开发环境需要 Node（本机验证为 22.22.2）、npm、`rust-toolchain.toml` 指定的 Rust stable，以及 Visual Studio MSVC C++ 工具及其 x64 可再发行 CRT。锁定 `Cargo.lock` 与 `package-lock.json`。构建脚本从本机 Visual Studio 的 Redist 目录准备应用本地 DLL，不从其他程序安装目录抽取系统文件。
+开发环境需要 PowerShell 7（`pwsh`）、Node（本机验证为 22.22.2）、npm、`rust-toolchain.toml` 指定的 Rust stable，以及 Visual Studio MSVC C++ 工具及其 x64 可再发行 CRT。请在 PowerShell 7 中运行以下脚本；Tauri 的构建钩子也使用 `pwsh`，以一致处理 UTF-8 脚本。锁定 `Cargo.lock` 与 `package-lock.json`。构建脚本从本机 Visual Studio 的 Redist 目录准备应用本地 DLL，不从其他程序安装目录抽取系统文件。
 
 ```powershell
 npm ci

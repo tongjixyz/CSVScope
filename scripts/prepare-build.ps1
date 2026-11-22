@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 $ErrorActionPreference = 'Stop'
 $prepareWorkspace = Split-Path -Parent $PSScriptRoot
 & (Join-Path $PSScriptRoot 'runtime.ps1')

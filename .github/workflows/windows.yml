@@ -66,8 +66,15 @@ jobs:
       - name: Test frontend
         run: npm test
 
-      - name: Prepare runtime and build frontend
-        run: ./scripts/prepare-build.ps1
+      - name: Run configured Tauri pre-build hook
+        run: |
+          $configuration = Get-Content -LiteralPath src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $command = $configuration.build.beforeBuildCommand
+          if ($command -isnot [string] -or [string]::IsNullOrWhiteSpace($command)) {
+            throw 'Expected a beforeBuildCommand string in the Tauri configuration.'
+          }
+          & $env:ComSpec /d /c $command
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test Rust workspace
         run: cargo test --workspace --features csvscope/custom-protocol --release --locked
