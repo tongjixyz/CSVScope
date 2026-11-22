@@ -155,6 +155,24 @@ input[type=checkbox] { accent-color: var(--green); width: 14px; height: 14px; }
 .cache-stats strong { color: #4d6c59; font-weight: 500; }
 .export-progress { border-top: 1px solid var(--border); background: #f2f8f4; padding: 7px 22px; }
 .export-progress > div { display: flex; align-items: center; gap: 10px; color: #679079; font-size: 11px; }
+.edit-hint { color: #8a9991; font-size: 10px; margin-right: 10px; white-space: nowrap; }
+.filter-legend { display: flex; align-items: center; gap: 5px; color: #8a9991; font-size: 10px; white-space: nowrap; }
+.filter-legend svg:last-of-type { color: #176b5b; margin-left: 7px; }
+.modified-status { color: #a07838; }
+.data-context-menu { position: fixed; z-index: 80; min-width: 245px; max-height: calc(100vh - 16px); overflow-y: auto; padding: 6px; border: 1px solid #dce6df; border-radius: 8px; background: white; box-shadow: 0 12px 40px #20352d2b; }
+.context-title { padding: 6px 9px 8px; color: #8a9991; font-size: 11px; border-bottom: 1px solid #edf1ee; margin-bottom: 4px; }
+.data-context-menu > button { display: flex; align-items: center; gap: 9px; padding: 8px 10px; width: 100%; border: 0; border-radius: 4px; background: transparent; color: #3f5549; font-size: 12px; text-align: left; }
+.data-context-menu > button:hover:not(:disabled), .data-context-menu > button:focus-visible { background: #eaf4ef; }
+.data-context-menu > button > span { flex: 1; }
+.data-context-menu > button > kbd { background: transparent; border: 0; box-shadow: none; color: #9aa59f; font-family: inherit; font-size: 10px; }
+.data-context-menu > button.context-danger { color: #a85f4c; }
+.context-colors { border-top: 1px solid #edf1ee; margin-top: 4px; padding: 9px 9px 6px; }
+.context-colors > span { color: #8a9991; font-size: 11px; }
+.context-colors > div { display: flex; align-items: center; gap: 7px; margin-top: 9px; }
+.context-colors button { border: 1px solid #00000012; width: 23px; height: 23px; border-radius: 4px; }
+.context-colors button:hover:not(:disabled) { outline: 2px solid #5d8973; outline-offset: 1px; }
+.context-colors .clear-color { background: #fff; color: #8d9c93; font-size: 18px; line-height: 18px; }
+.data-context-menu button:disabled { opacity: .4; }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (max-width: 1050px) { .shortcut, .tab-caption, .brand .version { display: none; } .app-header { padding: 0 20px; } .toolbar { padding: 0 14px; } .preparation-banner > span { display: block; } }
+@media (max-width: 1050px) { .shortcut, .tab-caption, .brand .version, .edit-hint, .filter-legend { display: none; } .app-header { padding: 0 20px; } .toolbar { padding: 0 14px; } .preparation-banner > span { display: block; } }

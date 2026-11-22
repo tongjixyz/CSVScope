@@ -56,14 +56,90 @@ try {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   result.firstRenderedDataSeconds = (performance.now() - opening) / 1000;
   await page.screenshot({ path: path.join(output, "preview.png") });
+  if (tabs.length === 1) {
+    const tabId = tabs[0];
+    const loading = await state(tabId);
+    if (loading.status === "preparing" && loading.query?.status === "loading" && Number(loading.query.generatedRows) > 1000) {
+      await page.waitForFunction(() => {
+        const status = document.querySelector(".status-left")?.textContent ?? "";
+        const loaded = status.match(/已加载 ([\d,]+) 条/);
+        return loaded && Number(loaded[1].replaceAll(",", "")) > 1000;
+      });
+      const target = 1000;
+      const readStarted = performance.now();
+      const copied = await invoke("copy_cells", {
+        tabId, queryId: loading.query.id, start: String(target - 1), count: 1, columns: [0], includeRid: true,
+      });
+      assert.equal(copied[0][0], String(target));
+      assert.equal(await invoke("full_cell", { tabId, rid: copied[0][0], column: 0 }), copied[0][1]);
+      const jump = page.getByRole("textbox", { name: "跳转行号" });
+      await jump.fill(String(target));
+      await jump.press("Enter");
+      await waitForGridValue(1, String(target));
+      const after = await state(tabId);
+      assert.equal(after.status, "preparing", "the loaded row must be usable before full preparation");
+      assert.equal(after.query?.exactTotal, null);
+      assert.ok(Number(after.query.generatedRows) >= Number(loading.query.generatedRows));
+      result.progressiveLoading = {
+        verified: true, target, availableRowsBefore: loading.query.generatedRows, availableRowsAfter: after.query.generatedRows,
+        secondsFromOpening: (performance.now() - opening) / 1000, interactionSeconds: (performance.now() - readStarted) / 1000,
+        operations: ["copy", "full field", "jump", "render beyond first 200 rows"],
+      };
+      await page.screenshot({ path: path.join(output, "background-loading.png") });
+      const canvas = page.getByTestId("data-grid-canvas");
+      const box = await canvas.boundingBox();
+      assert.ok(box);
+      await page.mouse.click(box.x + 240, box.y + 18);
+      const menu = page.getByRole("dialog", { name: `${loading.columns[0].name} 列筛选` });
+      await menu.waitFor();
+      const text = await invoke("full_cell", { tabId, rid: "2", column: 0 });
+      await menu.locator(".candidate-row").filter({ hasText: text }).first().waitFor();
+      await menu.getByText(/当前展示已加载部分的候选/).waitFor();
+      await page.screenshot({ path: path.join(output, "loading-candidates.png") });
+      await menu.getByRole("button", { name: "条件筛选", exact: true }).click();
+      await menu.getByLabel("比较方式").selectOption("equals");
+      await menu.getByLabel("比较值").fill(text);
+      const filtering = performance.now();
+      await menu.getByRole("button", { name: "确定", exact: true }).click();
+      await waitForGridValue(1, "2");
+      const filtered = await state(tabId);
+      assert.equal(filtered.status, "preparing", "filter results must render before EOF");
+      assert.equal(filtered.query.status, "loading");
+      assert.equal(filtered.query.exactTotal, null);
+      assert.ok(Number(filtered.query.generatedRows) > 0);
+      const sample = await invoke("copy_cells", {
+        tabId, queryId: filtered.query.id, start: "0",
+        count: Math.min(256, Number(filtered.query.generatedRows)), columns: [0], includeRid: true,
+      });
+      assert.ok(sample.every(row => row[1] === text));
+      result.incrementalFilter = {
+        verified: true, secondsToRenderedMatch: (performance.now() - filtering) / 1000,
+        secondsFromOpening: (performance.now() - opening) / 1000,
+        loadedSourceRows: filtered.rowsRead, scannedSourceRows: filtered.query.scannedRows,
+        matchingRows: filtered.query.generatedRows, copiedRows: sample.length,
+        queryId: filtered.query.id, preparing: true, exactTotal: filtered.query.exactTotal,
+      };
+      await page.screenshot({ path: path.join(output, "loading-filtered.png") });
+    }
+  }
   result.cases = await Promise.all(tabs.map(async (tabId, i) => {
     const s = await waitReady(tabId);
     return { file: files[i], bytes: s.totalBytes, rows: s.rowsRead, columns: s.columns.length,
       cacheHit: s.cacheHit, readyObservedSecondsFromOpening: (performance.now() - opening) / 1000 };
   }));
   result.cacheAfterAllReady = await invoke("cache_usage");
+  if (result.incrementalFilter) {
+    const complete = await state(tabs[0]);
+    assert.equal(complete.query.id, result.incrementalFilter.queryId, "EOF must preserve the incremental index");
+    assert.ok(Number(complete.query.exactTotal) > Number(result.incrementalFilter.matchingRows));
+    result.incrementalFilter.finalMatchingRows = complete.query.exactTotal;
+    result.incrementalFilter.sameQueryThroughEof = true;
+  }
   if (tabs.length === 1) {
     const tabId = tabs[0];
+    // The loading test left this same filter active. Reset first so the next
+    // measurement builds a fresh full-file query rather than timing a no-op.
+    if (result.incrementalFilter) await commit(tabId, { filters: {}, sort: [] });
     const text = await invoke("full_cell", { tabId, rid: "2", column: 0 });
     const view = { filters: { 0: { selection: null, predicates: [{ kind: "equals", text }] } }, sort: [] };
     const firstFilter = await commit(tabId, view);

@@ -3,5 +3,5 @@
   "identifier": "main-capability",
   "description": "Local file dialogs and app event access",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:allow-open", "dialog:allow-save"]
+  "permissions": ["core:default", "core:window:allow-destroy", "dialog:allow-open", "dialog:allow-save"]
 }

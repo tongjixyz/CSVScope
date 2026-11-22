@@ -19,17 +19,24 @@ export type Predicate =
   | { kind: "numericRange" | "dateTimeRange"; min: string | null; max: string | null };
 export interface ColumnFilter { selection: ValueSelection | null; predicates: Predicate[] }
 export interface SortKey { column: number; descending: boolean; interpretation: "text" | "number" | "datetime" }
-export interface ViewState { filters: Record<string, ColumnFilter>; sort: SortKey[] }
+export interface EditState {
+  cells: Record<string, Record<number, string>>;
+  deletedRows: string[];
+  deletedColumns: number[];
+  colors: Record<string, Record<number, string>>;
+}
+export interface ViewState { filters: Record<string, ColumnFilter>; sort: SortKey[]; edits?: EditState }
 export interface QuerySnapshot {
   id: string; revision: number; status: string; generatedRows: string;
   exactTotal: string | null; projection: number[]; error: string | null;
+  scannedRows: string | null;
 }
 export interface Session {
   id: string; path: string; name: string; status: string; phase: string;
   bytesRead: string; totalBytes: string; rowsRead: string; columns: Column[];
   preview: string[][]; parseSpec: ParseSpec; warnings: string[]; error: string | null;
   revision: number; view: ViewState; canUndo: boolean; canRedo: boolean;
-  query: QuerySnapshot | null; cacheHit: boolean;
+  query: QuerySnapshot | null; cacheHit: boolean; modified: boolean;
 }
 export interface Candidate { value: FilterValue; label: string; empty: boolean; matchingSearches?: string[] }
 export interface CandidatePage {
@@ -40,6 +47,7 @@ export interface CandidateStatus {
   id: string; tabId: string; revision: number; column: number; search: string;
   status: string; count: string; error: string | null;
   availability: { value: FilterValue; available: boolean | null }[];
+  partial: boolean;
 }
 export interface ExportStatus {
   id: string; tabId: string; status: string; path: string;

@@ -90,6 +90,56 @@ fn main() -> Result<()> {
             file.flush()?;
             println!("{}", serde_json::json!({ "path": path, "actualBytes": written, "rows": row, "columns": columns, "generationSeconds": start.elapsed().as_secs_f64() }));
         }
+        Some("stream-filter") => {
+            let path = PathBuf::from(args.get(2).context("stream-filter <generated-file> <new-cache-directory>")?);
+            let cache = args.get(3).context("缺少新缓存目录")?;
+            let engine = Engine::new(EngineConfig::new(cache))?;
+            let opening = Instant::now();
+            let tab = engine.open(path.clone(), ParseSpec::default())?;
+            let before = loop {
+                let state = engine.snapshot(&tab)?;
+                ensure!(!matches!(state.status.as_str(), "failed" | "ready"), "未能在 EOF 前开始测量：{:?}", state.error);
+                if state.query.as_ref().is_some_and(|q| q.status == "loading" && q.generated_rows.parse::<u64>().unwrap_or(0) > 200) {
+                    break state;
+                }
+                thread::sleep(Duration::from_millis(5));
+            };
+            let text = engine.full_cell(&tab, 2, 0)?;
+            let started = Instant::now();
+            let filtered = engine.commit(&tab, before.revision, ViewState {
+                filters: BTreeMap::from([(0, equals(text.clone()))]), ..Default::default()
+            })?;
+            let query_id = filtered.query.unwrap().id;
+            let first = loop {
+                let state = engine.snapshot(&tab)?;
+                ensure!(state.query.as_ref().is_none_or(|q| q.status != "failed"), "{:?}", state.query);
+                if state.query.as_ref().is_some_and(|q| q.generated_rows != "0") { break state; }
+                thread::sleep(Duration::from_millis(1));
+            };
+            ensure!(first.status == "preparing", "首个匹配结果必须在 EOF 前可用");
+            let rows = engine.copy_cells(&tab, &query_id, 0,
+                first.query.as_ref().unwrap().generated_rows.parse::<usize>()?.min(256), vec![0], true)?;
+            ensure!(!rows.is_empty() && rows.iter().all(|r| r[1] == text), "增量结果值不正确");
+            ensure!(rows[0][0] == "2", "首条匹配记录的原始行号不正确");
+            let first_page_seconds = started.elapsed().as_secs_f64();
+            let complete = wait(&engine, &tab)?;
+            let query = complete.query.as_ref().unwrap();
+            ensure!(query.id == query_id, "EOF 后不应重新扫描已经筛选过的前缀");
+            ensure!(query.generated_rows.parse::<u64>()? > first.query.as_ref().unwrap().generated_rows.parse::<u64>()?,
+                "背景加载后应当补充新命中");
+            println!("{}", serde_json::json!({
+                "status": "measured", "path": path, "bytes": complete.total_bytes, "rows": complete.rows_read,
+                "filterAppliedSecondsFromOpen": (opening.elapsed() - started.elapsed()).as_secs_f64(),
+                "firstFilteredPageSeconds": first_page_seconds,
+                "firstFilteredPage": { "availableSourceRows": first.rows_read,
+                    "scannedSourceRows": first.query.as_ref().unwrap().scanned_rows,
+                    "matches": first.query.as_ref().unwrap().generated_rows,
+                    "returnedRows": rows.len(), "preparing": true, "exactTotal": first.query.as_ref().unwrap().exact_total },
+                "readySeconds": opening.elapsed().as_secs_f64(), "finalMatches": query.exact_total,
+                "sameQueryThroughEof": true, "cache": engine.cache_usage(),
+                "note": "Fresh application cache; OS cache and other host workloads uncontrolled."
+            }));
+        }
         Some("open" | "exercise") => {
             let path = PathBuf::from(args.get(2).context("open <file> [cache-directory]")?);
             let cache = PathBuf::from(args.get(3).map(String::as_str).unwrap_or(".bench/cache"));
@@ -98,6 +148,7 @@ fn main() -> Result<()> {
             let tab = engine.open(path.clone(), ParseSpec::default())?;
             let mut preview_time = None;
             let mut ready_time = None;
+            let mut loaded_page = None;
             loop {
                 let state = engine.snapshot(&tab)?;
                 if preview_time.is_none() && !state.columns.is_empty() {
@@ -105,6 +156,21 @@ fn main() -> Result<()> {
                     eprintln!("preview: {:.3}s", preview_time.unwrap());
                 }
                 ensure!(!matches!(state.status.as_str(), "failed" | "cancelled"), "{:?}", state.error);
+                if loaded_page.is_none() && state.status == "preparing" {
+                    if let Some(query) = state.query.as_ref().filter(|q| q.status == "loading" && q.generated_rows.parse::<u64>().unwrap_or(0) > 200) {
+                        let page_start = Instant::now();
+                        let bytes = engine.page(&tab, &query.id, 200, 256, vec![0])?;
+                        let batch = duckdb::arrow::ipc::reader::FileReader::try_new(std::io::Cursor::new(bytes), None)?
+                            .next().context("后台读取的首个扩展页为空")??;
+                        ensure!(batch.num_rows() > 0, "后台扩展页没有记录");
+                        loaded_page = Some(serde_json::json!({
+                            "secondsFromOpen": start.elapsed().as_secs_f64(),
+                            "readSeconds": page_start.elapsed().as_secs_f64(),
+                            "availableRows": query.generated_rows, "pageRows": batch.num_rows(),
+                            "start": 200, "preparing": true,
+                        }));
+                    }
+                }
                 if state.status == "ready" && ready_time.is_none() {
                     ready_time = Some(start.elapsed().as_secs_f64());
                 }
@@ -112,13 +178,13 @@ fn main() -> Result<()> {
                     let mut report = serde_json::json!({
                         "status": "measured", "path": path, "bytes": state.total_bytes, "rows": state.rows_read,
                         "columns": state.columns.len(), "previewSeconds": preview_time,
-                        "readySeconds": ready_time, "cacheHit": state.cache_hit, "cache": engine.cache_usage(),
+                        "readySeconds": ready_time, "firstLoadedPage": loaded_page, "cacheHit": state.cache_hit, "cache": engine.cache_usage(),
                         "note": "OS file-cache state is not controlled by this command; process-tree memory requires the benchmark wrapper."
                     });
                     if args[1] == "exercise" {
                         ensure!(state.columns.len() >= 5 && state.rows_read.parse::<u64>()? > 1, "exercise 用于 csvbench 生成的至少 5 列数据");
                         let selected = engine.full_cell(&tab, 2, 0)?;
-                        let mut view = ViewState { filters: BTreeMap::from([(0, equals(selected))]), sort: vec![] };
+                        let mut view = ViewState { filters: BTreeMap::from([(0, equals(selected))]), sort: vec![], ..Default::default() };
                         let query_start = Instant::now();
                         engine.commit(&tab, state.revision, view.clone())?;
                         let first = wait(&engine, &tab)?;
@@ -140,7 +206,7 @@ fn main() -> Result<()> {
                         let export_start = Instant::now();
                         let export_id = engine.export(&tab, &filtered.query.as_ref().unwrap().id, ExportSpec {
                             path: export_path.clone(), columns: (0..state.columns.len()).collect(), delimiter: ",".into(),
-                            encoding: "utf-8".into(), bom: false, headers: true,
+                            encoding: "utf-8".into(), bom: false, headers: true, all_rows: false,
                         })?;
                         loop {
                             let export = engine.export_snapshot(&export_id)?;
@@ -160,6 +226,7 @@ fn main() -> Result<()> {
                         let sort_start = Instant::now();
                         engine.commit(&tab, filtered.revision, ViewState {
                             filters: BTreeMap::new(), sort: vec![SortKey { column: 2, descending: true, interpretation: "text".into() }],
+                            ..Default::default()
                         })?;
                         let sorted = wait(&engine, &tab)?;
                         report["fullSortSeconds"] = sort_start.elapsed().as_secs_f64().into();
@@ -182,6 +249,7 @@ fn main() -> Result<()> {
                         let before_cancel = engine.snapshot(&tab)?;
                         engine.commit(&tab, before_cancel.revision, ViewState {
                             filters: BTreeMap::new(), sort: vec![SortKey { column: 4, descending: true, interpretation: "text".into() }],
+                            ..Default::default()
                         })?;
                         thread::sleep(Duration::from_millis(20));
                         let started = Instant::now();
@@ -204,7 +272,7 @@ fn main() -> Result<()> {
                 thread::sleep(Duration::from_millis(10));
             }
         }
-        _ => println!("csvbench generate <new-file> <MiB> [columns] [unique]\ncsvbench open <file> [cache-directory]\ncsvbench exercise <generated-file> [cache-directory]\ncsvbench multi <cache-directory> <files...>"),
+        _ => println!("csvbench generate <new-file> <MiB> [columns] [unique]\ncsvbench open <file> [cache-directory]\ncsvbench stream-filter <generated-file> <new-cache-directory>\ncsvbench exercise <generated-file> [cache-directory]\ncsvbench multi <cache-directory> <files...>"),
     }
     Ok(())
 }

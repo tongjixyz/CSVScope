@@ -9,7 +9,7 @@ use duckdb::arrow::{
 };
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -46,6 +46,15 @@ pub struct StoreWriter {
     bytes_written: u64,
 }
 
+/// Query results keep identities only; cell values are fetched for the visible
+/// page. Candidate stores still use Arrow fragments because they own values.
+pub struct RidWriter {
+    store: std::sync::Arc<ResultStore>,
+    file: BufWriter<File>,
+    rows: u64,
+    disk_limit: u64,
+}
+
 impl ResultStore {
     pub fn create(directory: PathBuf, columns: Vec<usize>) -> Result<std::sync::Arc<Self>> {
         fs::create_dir_all(&directory)?;
@@ -54,9 +63,27 @@ impl ResultStore {
     pub fn generated(&self) -> u64 { self.index.lock().unwrap().generated }
     pub fn complete(&self) -> bool { self.index.lock().unwrap().complete }
     pub fn identity(&self, count: u64) {
+        self.identity_prefix(count, true);
+    }
+    pub fn identity_prefix(&self, count: u64, complete: bool) {
         let mut index = self.index.lock().unwrap();
         index.generated = count;
-        index.complete = true;
+        index.complete = complete;
+    }
+    pub fn rid_writer(self: &std::sync::Arc<Self>, disk_limit: u64) -> Result<RidWriter> {
+        Ok(RidWriter { store: self.clone(), file: BufWriter::with_capacity(256 * 1024,
+            File::create(self.rid_file())?), rows: 0, disk_limit })
+    }
+    pub fn read_ids(&self, start: u64, count: usize) -> Result<Vec<u64>> {
+        ensure!(count > 0 && count <= 2048, "页大小无效");
+        let generated = self.generated();
+        ensure!(start < generated, "Pending：结果位置尚未生成");
+        let count = (generated - start).min(count as u64) as usize;
+        let mut file = File::open(self.rid_file())?;
+        file.seek(SeekFrom::Start(start * 8))?;
+        let mut bytes = vec![0; count * 8];
+        file.read_exact(&mut bytes)?;
+        Ok(bytes.chunks_exact(8).map(|b| u64::from_le_bytes(b.try_into().unwrap())).collect())
     }
     pub fn writer(self: &std::sync::Arc<Self>, disk_limit: u64) -> Result<StoreWriter> {
         let rid_file = File::create(self.directory.join("rids.bin"))?;
@@ -102,6 +129,29 @@ impl ResultStore {
         Ok(u64::from_le_bytes(bytes))
     }
     pub fn rid_file(&self) -> PathBuf { self.directory.join("rids.bin") }
+}
+
+impl RidWriter {
+    pub fn append(&mut self, batch: &RecordBatch) -> Result<()> {
+        let ids = batch.column(0).as_any().downcast_ref::<UInt64Array>().context("结果缺少稳定记录序号")?;
+        ensure!(self.rows.saturating_add(ids.len() as u64).saturating_mul(8) <= self.disk_limit,
+            "结果索引超过磁盘配额，请减少结果或提高预算");
+        for rid in ids.values() { self.file.write_all(&rid.to_le_bytes())?; }
+        self.rows += ids.len() as u64;
+        Ok(())
+    }
+    pub fn publish(&mut self) -> Result<u64> {
+        // Readers may open rids.bin as soon as generated advances.
+        self.file.flush()?;
+        self.store.index.lock().unwrap().generated = self.rows;
+        Ok(self.rows)
+    }
+    pub fn finish(mut self) -> Result<u64> {
+        self.publish()?;
+        self.file.get_ref().sync_all()?;
+        self.store.index.lock().unwrap().complete = true;
+        Ok(self.rows)
+    }
 }
 
 impl Drop for ResultStore {

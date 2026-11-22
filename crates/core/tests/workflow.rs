@@ -83,7 +83,7 @@ fn linked_filters_history_export_and_cache_are_consistent() {
     assert_eq!(cells[0], ["1", "001", "a,\r\nb"]);
     let output = workspace.path().join("output.csv");
     let export = engine.export(&tab, &query.id, ExportSpec {
-        path: output.clone(), columns: vec![0, 1, 2, 3], delimiter: ",".into(), encoding: "utf-8".into(), bom: false, headers: true,
+        path: output.clone(), columns: vec![0, 1, 2, 3], delimiter: ",".into(), encoding: "utf-8".into(), bom: false, headers: true, all_rows: false,
     }).unwrap();
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
@@ -112,7 +112,7 @@ fn stale_queries_and_two_tabs_cannot_override_current_state() {
     let tab = engine.open(source.clone(), ParseSpec::default()).unwrap();
     let initial = wait(&engine, &tab);
     let old_query = initial.query.unwrap().id;
-    let view = ViewState { filters: BTreeMap::from([(0, selected(&["x"]))]), sort: vec![] };
+    let view = ViewState { filters: BTreeMap::from([(0, selected(&["x"]))]), sort: vec![], ..Default::default() };
     engine.commit(&tab, initial.revision, view).unwrap();
     assert!(engine.page(&tab, &old_query, 0, 10, vec![0]).is_err());
     let filtered = wait(&engine, &tab);
@@ -158,6 +158,7 @@ fn sorted_result_projection_and_far_jump_keep_identity_without_history_changes()
     let view = ViewState {
         filters: BTreeMap::from([(0, selected(&["1"]))]),
         sort: vec![SortKey { column: 0, descending: true, interpretation: "text".into() }],
+        ..Default::default()
     };
     engine.commit(&tab, initial.revision, view.clone()).unwrap();
     let before = wait(&engine, &tab);
@@ -255,6 +256,7 @@ fn numeric_and_datetime_interpretation_rejects_implicit_rewriting() {
             (1, ColumnFilter { selection: None, predicates: vec![Predicate::DateTimeRange { min: Some("2026-01-01".into()), max: None }] }),
         ]),
         sort: vec![],
+        ..Default::default()
     };
     engine.commit(&tab, initial.revision, view).unwrap();
     let result = wait(&engine, &tab);
@@ -336,6 +338,7 @@ fn long_value_references_survive_context_changes_and_searches_beyond_display_lab
             }),
         ]),
         sort: vec![],
+        ..Default::default()
     };
     engine.commit(&tab, initial.revision, view).unwrap();
     assert_eq!(wait(&engine, &tab).query.unwrap().exact_total.as_deref(), Some("1"));
@@ -378,4 +381,28 @@ fn configured_tab_limit_is_global_and_closing_a_tab_returns_capacity() {
     engine.close(&first).unwrap();
     let third = engine.open(source, ParseSpec::default()).unwrap();
     assert_eq!(wait(&engine, &third).query.unwrap().exact_total.as_deref(), Some("1"));
+}
+
+#[test]
+fn simultaneous_imports_publish_one_cache_and_keep_each_tab_readable() {
+    let workspace = tempfile::tempdir().unwrap();
+    let source = workspace.path().join("shared.csv");
+    let mut writer = csv::Writer::from_path(&source).unwrap();
+    writer.write_record(["id", "text"]).unwrap();
+    for row in 1..=40_000 {
+        writer.write_record([format!("{row:08}"), format!("中文,{row}\r\n\"原文\"")]).unwrap();
+    }
+    writer.flush().unwrap();
+    drop(writer);
+    let engine = setup(&workspace.path().join("cache"));
+    let tabs: Vec<_> = (0..8).map(|_| engine.open(source.clone(), ParseSpec::default()).unwrap()).collect();
+    for tab in &tabs {
+        let ready = wait(&engine, tab);
+        let query = ready.query.unwrap();
+        assert_eq!(query.exact_total.as_deref(), Some("40000"));
+        assert_eq!(engine.copy_cells(tab, &query.id, 39_999, 1, vec![0, 1], true).unwrap()[0],
+            ["40000", "00040000", "中文,40000\r\n\"原文\""]);
+    }
+    assert_eq!(fs::read_dir(engine.config.cache_dir.join("datasets")).unwrap().count(), 1);
+    for tab in tabs { engine.close(&tab).unwrap(); }
 }

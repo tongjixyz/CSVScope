@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 pub struct CsvRecord {
     pub fields: Vec<String>,
+    pub field_count: usize,
     pub byte_start: u64,
     pub line_start: u64,
 }
@@ -95,6 +96,8 @@ impl CsvStream {
         }, warnings))
     }
     pub fn spec(&self) -> &ParseSpec { &self.spec }
+    /// Retain the stable read lease when parsing finishes before ingestion.
+    pub fn source_guard(&self) -> Result<File> { Ok(self.file.try_clone()?) }
     pub fn hash(&self) -> String { self.hasher.finalize().to_hex().to_string() }
     pub fn finish_hash(&mut self, cancel: &AtomicBool, mut progress: impl FnMut(u64)) -> Result<String> {
         let mut buffer = vec![0; 1024 * 1024];
@@ -109,6 +112,14 @@ impl CsvStream {
         Ok(self.hash())
     }
     pub fn next(&mut self, budget: Option<u64>, cancel: &AtomicBool) -> Result<ReadOutcome> {
+        let mut fields = Vec::new();
+        let mut outcome = self.next_into(budget, cancel, |_, value| fields.push(value.to_owned()))?;
+        if let ReadOutcome::Record(record) = &mut outcome { record.fields = fields; }
+        Ok(outcome)
+    }
+    /// Deliver borrowed decoded fields directly to a batch builder. The owned
+    /// record API above is still used for the small preview and parser clients.
+    pub fn next_into(&mut self, budget: Option<u64>, cancel: &AtomicBool, mut field: impl FnMut(usize, &str)) -> Result<ReadOutcome> {
         let begin = self.consumed;
         loop {
             ensure!(!cancel.load(Ordering::Relaxed), "任务已取消");
@@ -160,24 +171,23 @@ impl CsvStream {
                 }
                 ReadRecordResult::Record => {
                     ensure!(self.ends_len <= self.spec.max_columns, "逻辑记录 {}：列数超过上限", self.logical_records + 1);
-                    let mut values = Vec::with_capacity(self.ends_len);
                     let mut start = 0;
                     let mut decoded_bytes = 0;
-                    for &finish in &self.ends[..self.ends_len] {
+                    for (column, &finish) in self.ends[..self.ends_len].iter().enumerate() {
                         let bytes = &self.output[start..finish];
-                        ensure!(bytes.len() <= self.spec.max_field_bytes, "逻辑记录 {}，列 {}：字段超限", self.logical_records + 1, values.len() + 1);
+                        ensure!(bytes.len() <= self.spec.max_field_bytes, "逻辑记录 {}，列 {}：字段超限", self.logical_records + 1, column + 1);
                         let decoded = match self.spec.encoding.as_str() {
                             "utf-8" => std::str::from_utf8(bytes).ok().map(std::borrow::Cow::Borrowed),
                             "gbk" => encoding_rs::GBK.decode_without_bom_handling_and_without_replacement(bytes),
                             _ => encoding_rs::GB18030.decode_without_bom_handling_and_without_replacement(bytes),
                         }.with_context(|| format!("逻辑记录 {}，字节 {}，物理行 {}，列 {}：非法 {} 编码",
-                            self.logical_records + 1, self.record_start, self.record_line, values.len() + 1, self.spec.encoding))?;
+                            self.logical_records + 1, self.record_start, self.record_line, column + 1, self.spec.encoding))?;
                         decoded_bytes += decoded.len();
                         ensure!(decoded.len() <= self.spec.max_field_bytes && decoded_bytes <= self.spec.max_record_bytes, "解码后记录或字段超过预算");
-                        values.push(decoded.into_owned());
+                        field(column, &decoded);
                         start = finish;
                     }
-                    let record = CsvRecord { fields: values, byte_start: self.record_start, line_start: self.record_line };
+                    let record = CsvRecord { fields: vec![], field_count: self.ends_len, byte_start: self.record_start, line_start: self.record_line };
                     self.logical_records += 1;
                     self.record_start = self.consumed;
                     self.record_line = self.line;
@@ -192,9 +202,9 @@ impl CsvStream {
 }
 
 pub fn validate_width(record: &CsvRecord, width: usize, rid: u64) -> Result<()> {
-    if record.fields.len() != width {
+    if record.field_count != width {
         bail!("数据记录 {rid}，字节 {}，物理行 {}：期望 {width} 列，实际 {} 列",
-            record.byte_start, record.line_start, record.fields.len());
+            record.byte_start, record.line_start, record.field_count);
     }
     Ok(())
 }
@@ -232,6 +242,40 @@ mod tests {
         let spec = ParseSpec { max_record_bytes: 1024, ..Default::default() };
         let (mut stream, _) = CsvStream::open(&path, spec)?;
         assert!(stream.next(None, &AtomicBool::new(false)).is_err());
+        Ok(())
+    }
+    #[test]
+    fn borrowed_fields_match_owned_records_for_utf8_and_gb18030() -> Result<()> {
+        let text = "名称,编号,内容\r\n中文,000123,\"a,\r\n\"\"b\"\"\"\r\n四字节𠀀,42,\r\n";
+        for encoding in ["utf-8", "gb18030"] {
+            let bytes = if encoding == "utf-8" { text.as_bytes().to_vec() }
+                else { encoding_rs::GB18030.encode(text).0.into_owned() };
+            let mut file = tempfile::NamedTempFile::new()?;
+            file.write_all(&bytes)?;
+            let path = file.into_temp_path();
+            let spec = ParseSpec { encoding: encoding.into(), ..Default::default() };
+            let (mut owned, _) = CsvStream::open(&path, spec.clone())?;
+            let (mut borrowed, _) = CsvStream::open(&path, spec)?;
+            let cancel = AtomicBool::new(false);
+            loop {
+                let mut fields = vec![];
+                let actual = borrowed.next_into(Some(7), &cancel, |column, value| {
+                    assert_eq!(column, fields.len());
+                    fields.push(value.to_string());
+                })?;
+                match actual {
+                    ReadOutcome::Yield => assert!(fields.is_empty()),
+                    ReadOutcome::Record(record) => {
+                        let ReadOutcome::Record(expected) = owned.next(None, &cancel)? else { panic!("missing record"); };
+                        assert_eq!(fields, expected.fields);
+                        assert_eq!(record.field_count, expected.fields.len());
+                        assert_eq!((record.byte_start, record.line_start), (expected.byte_start, expected.line_start));
+                    }
+                    ReadOutcome::End => break,
+                }
+            }
+            assert_eq!(owned.hash(), borrowed.hash());
+        }
         Ok(())
     }
 }

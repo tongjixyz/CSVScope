@@ -1,8 +1,10 @@
 pub mod diagnostics;
+pub mod editing;
 pub mod filter;
 pub mod history;
 pub mod model;
 pub mod parser;
+mod ingest;
 pub mod store;
 pub mod engine;
 pub use engine::Engine;

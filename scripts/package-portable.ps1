@@ -18,7 +18,7 @@ try {
         Copy-Item -LiteralPath $dll.FullName -Destination $destination
     }
     Copy-Item -LiteralPath 'runtime\manifest.json' -Destination (Join-Path $destination 'runtime-manifest.json')
-    foreach ($document in @('README.md', 'LICENSE')) {
+    foreach ($document in @('README.md', 'LICENSE', 'CHANGELOG.md')) {
         Copy-Item -LiteralPath $document -Destination $destination
     }
     $docsDirectory = Join-Path $destination 'docs'
@@ -35,9 +35,10 @@ CSVScope $version Preview — Windows x64
 
 1. 解压整个文件夹，运行 csvscope.exe。请保留同目录 DLL。
 2. 需要 Microsoft Edge WebView2 Runtime。若系统缺少该运行时，请先通过微软提供的安装程序安装。
-3. Ctrl+O 打开 CSV；首先显示有限预览，随后完整准备。只有“完整数据已就绪”才代表全部数据可筛选。
-4. 列标题右侧菜单提供联动筛选；点击确定才应用。Ctrl+Z 撤销，Ctrl+Y 重做。
-5. 导出创建新文件；不会覆盖已有文件。可以选择全部列或可见列。
+3. Ctrl+O 打开 CSV。预览之后可以浏览和筛选已加载记录，完整数据就绪后可以全局排序和编辑。
+4. 表头下拉三角提供筛选与排序；绿色漏斗表示已筛选。Ctrl/Shift 点击表头多选列，右键隐藏/删除；点击源记录号选择行。
+5. 双击或 F2 编辑完整单元格，Ctrl+Enter 应用；右键可标色。Ctrl+Z 撤销，Ctrl+Y 重做。Ctrl+S 另存为真正的 CSV，可选择全部记录或筛选结果及列范围。保存使用新文件名。
+   有颜色时同时生成 .csv.csvscope.json；移动或备份 CSV 时保留该文件，以便重新打开后恢复颜色。
 6. 程序正常处理本地文件不需要网络。此便携包不含 WebView2 离线安装器，也不需要开发工具。
 7. 自动记录运行日志，默认位于程序旁的 logs 文件夹；右上角“打开运行日志”可直接定位。卡顿后请保留整个 logs 文件夹和大致发生时间。
 

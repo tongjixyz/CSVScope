@@ -20,6 +20,8 @@ export default function FilterMenu({ tab, column, onClose, onApply }: Props) {
   const [previous, setPrevious] = useState<string[]>([]);
   const [count, setCount] = useState<string | null>(null);
   const [status, setStatus] = useState("queued");
+  const [partial, setPartial] = useState(false);
+  const [sampleRefresh, setSampleRefresh] = useState(0);
   const [error, setError] = useState("");
   const [availability, setAvailability] = useState<Record<string, boolean | null>>({});
   const [mode, setMode] = useState("values");
@@ -39,6 +41,7 @@ export default function FilterMenu({ tab, column, onClose, onApply }: Props) {
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   const ready = tab.status === "ready";
+  const canQuery = ready || (tab.status === "preparing" && !!tab.query);
   const outdated = baseRevision.current !== tab.revision;
 
   useEffect(() => {
@@ -46,13 +49,16 @@ export default function FilterMenu({ tab, column, onClose, onApply }: Props) {
     let timer: ReturnType<typeof setTimeout>;
     let disposed = false;
     setItems([]); setCount(null); setNext(null); setCursor("0"); setPrevious([]); setStatus("queued"); setError("");
-    if (!ready || outdated) return;
+    setPartial(!ready);
+    setAvailability({});
+    if (!canQuery || outdated) return;
     const poll = async (id: string) => {
       if (disposed || generation.current !== thisGeneration) return;
       try {
         const snapshot = await api.candidateStatus(id);
         if (disposed || generation.current !== thisGeneration) return;
         setStatus(snapshot.status);
+        setPartial(snapshot.partial);
         if (snapshot.availability.length) setAvailability(Object.fromEntries(snapshot.availability.map(a => [valueKey(a.value), a.available])));
         if (snapshot.error) setError(snapshot.error);
         if (snapshot.status === "ready" || Number(snapshot.count) > 0) {
@@ -75,7 +81,7 @@ export default function FilterMenu({ tab, column, onClose, onApply }: Props) {
       disposed = true; clearTimeout(timer);
       if (candidateId.current) { void api.closeCandidates(candidateId.current); candidateId.current = null; }
     };
-  }, [tab.id, tab.revision, column, search, ready, outdated]); // Draft selection deliberately survives searches.
+  }, [tab.id, tab.revision, column, search, ready, canQuery, outdated, sampleRefresh]); // Draft selection deliberately survives searches.
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -135,7 +141,7 @@ export default function FilterMenu({ tab, column, onClose, onApply }: Props) {
         <button className={mode === "condition" ? "selected" : ""} onClick={() => setMode("condition")}>条件筛选</button>
       </div>
       {mode === "values" ? <>
-        <div className="search-field"><Search size={15} /><input aria-label="搜索完整候选集合" autoFocus placeholder="搜索此列的所有候选值…" value={search} onChange={e => setSearch(e.target.value)} />{search && <button className="icon-button" onClick={() => setSearch("")}><X size={14} /></button>}</div>
+        <div className="search-field"><Search size={15} /><input aria-label={ready ? "搜索完整候选集合" : "搜索已加载候选"} autoFocus placeholder={ready ? "搜索此列的所有候选值…" : "搜索已加载数据中的候选值…"} value={search} onChange={e => setSearch(e.target.value)} />{search && <button className="icon-button" onClick={() => setSearch("")}><X size={14} /></button>}</div>
         <div className="selection-actions">
           <button onClick={() => setSelection(emptySelection())}>全选</button><span>·</span>
           <button onClick={() => setSelection({ ...emptySelection(), defaultSelected: false })}>取消全选</button>
@@ -144,16 +150,17 @@ export default function FilterMenu({ tab, column, onClose, onApply }: Props) {
             setItems(old => old.map(item => ({ ...item, matchingSearches: [...(item.matchingSearches ?? []), search] })));
           }}>全选搜索命中</button>}
         </div>
-        {search && <p className="small-note">搜索覆盖完整候选集合。按规则全选后，条件放宽时新增命中也会选中。</p>}
+        {search && <p className="small-note">{ready ? "搜索覆盖完整候选集合。" : "当前搜索已加载部分。"}按规则全选后，后续读到的新命中也会选中。</p>}
+        {partial && <p className="small-note">当前展示已加载部分的候选，最多 200 个，不代表全文件。完整加载后自动刷新。<button className="text-button" onClick={() => setSampleRefresh(n => n + 1)}>刷新已加载候选</button></p>}
         <div className="candidate-list">
-          {!ready && <div className="candidate-state">完整数据准备后可查看候选；现在可提前设置条件。</div>}
+          {!canQuery && <div className="candidate-state">首批数据正在准备，可先设置条件。</div>}
           {outdated && <div className="inline-error">筛选上下文已更新，草稿已保留。请取消后重新打开。</div>}
           {items.map((item, index) => <label className="candidate-row" key={`${valueKey(item.value)}-${index}`}>
             <input type="checkbox" checked={isSelected(selection, item)} onChange={() => setSelection(s => toggleValue(s, item))} />
             <span className={item.empty ? "muted italic" : ""} title={item.label}>{item.empty ? "(空字段)" : item.label}</span>
           </label>)}
-          {(status === "queued" || status === "building") && ready && <div className="candidate-state"><LoaderCircle className="spin" size={16} />{status === "queued" ? "等待查询资源…" : "正在查询完整候选集合…"}</div>}
-          {status === "ready" && !items.length && <div className="candidate-state">没有匹配的候选值</div>}
+          {(status === "queued" || status === "building") && canQuery && <div className="candidate-state"><LoaderCircle className="spin" size={16} />{status === "queued" ? "等待查询资源…" : partial ? "正在查询已加载候选…" : "正在查询完整候选集合…"}</div>}
+          {status === "ready" && !items.length && <div className="candidate-state">{partial ? "已加载部分暂未找到候选，可刷新或直接设置条件" : "没有匹配的候选值"}</div>}
           {status === "ready" && (next || previous.length > 0) && <div className="selection-actions">
             <button onClick={() => void loadPage(true)} disabled={busy || previous.length === 0}>上一页</button>
             <span>第 {previous.length + 1} 页</span>
@@ -166,7 +173,7 @@ export default function FilterMenu({ tab, column, onClose, onApply }: Props) {
               : availability[valueKey(point.value)] === true ? "可用，当前页或搜索中未显示" : "可用状态待检查"}</span></div>)}
           {retained.length > 100 && <div>仅检查前 100 个显式值；其余选择继续保留。</div>}
         </details>}
-        <div className="candidate-count">{count === null ? "精确候选数量尚未完成" : `${Number(count).toLocaleString()} 个不同值`}</div>
+        <div className="candidate-count">{partial ? `已列出 ${items.length} 个候选 · 完整数量待加载完成` : count === null ? "精确候选数量尚未完成" : `${Number(count).toLocaleString()} 个不同值`}</div>
       </> : <div className="condition-editor">
         <label>比较方式<select value={operator} onChange={e => { setOperator(e.target.value as Predicate["kind"]); setConditionDirty(true); }}>
           <option value="equals">等于</option><option value="notEquals">不等于</option>
